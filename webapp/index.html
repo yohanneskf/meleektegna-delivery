@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>መልእክተኛው Delivery</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --navy: #14213d;
+    --yellow: #ffd60a;
+    --bg: #f4f6fb;
+    --card: #ffffff;
+    --text: #14213d;
+    --muted: #6b7280;
+    --border: #d9deea;
+    --error: #d62828;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Ethiopic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 96px;
+  }
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: 22px 16px 26px;
+    text-align: center;
+    border-bottom: 5px solid var(--yellow);
+  }
+  header h1 { margin: 0; font-size: 22px; color: var(--yellow); }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .9; }
+
+  form { max-width: 520px; margin: 0 auto; padding: 16px; }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px rgba(20,33,61,.06);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 15px; color: var(--navy); }
+
+  label.field { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  label.field:first-of-type { margin-top: 0; }
+  label.field small { font-weight: 400; color: var(--muted); }
+
+  input[type=text], input[type=tel], input[type=number], textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    font-size: 16px;
+    background: #fff;
+    color: var(--text);
+    outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--navy); }
+  .invalid { border-color: var(--error) !important; }
+  .err { color: var(--error); font-size: 12px; margin-top: 4px; display: none; }
+  .err.show { display: block; }
+
+  /* option chips */
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .chips.three { grid-template-columns: 1fr 1fr 1fr; }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip span {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    min-height: 62px;
+    padding: 8px 6px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    font-size: 13px; font-weight: 600; text-align: center;
+    background: #fff;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .chip span em { font-style: normal; font-size: 20px; }
+  .chip input:checked + span {
+    border-color: var(--navy);
+    background: var(--yellow);
+    box-shadow: 0 0 0 2px var(--navy) inset;
+  }
+
+  .reveal { display: none; margin-top: 12px; }
+  .reveal.show { display: block; }
+
+  /* quantity stepper */
+  .stepper { display: flex; align-items: center; gap: 10px; }
+  .stepper button {
+    width: 46px; height: 46px; border: none; border-radius: 12px;
+    background: var(--navy); color: var(--yellow);
+    font-size: 24px; font-weight: 700; cursor: pointer;
+  }
+  .stepper input { text-align: center; flex: 1; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .submit {
+    display: none;
+    width: 100%; padding: 15px; border: none; border-radius: 14px;
+    background: var(--navy); color: var(--yellow);
+    font-size: 17px; font-weight: 700; cursor: pointer;
+  }
+  body.no-telegram .submit { display: block; }
+
+  .done {
+    display: none; text-align: center; padding: 60px 20px;
+  }
+  .done .tick { font-size: 64px; }
+  .done h2 { margin: 10px 0 4px; }
+  pre { text-align: left; background: #fff; padding: 12px; border-radius: 12px; font-size: 12px; overflow: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>መልእክተኛው delivery</h1>
+  <p>ASTU Student Delivery · የማድረስ አገልግሎት</p>
+</header>
+
+<form id="orderForm" novalidate>
+
+  <!-- 1. Pickup -->
+  <div class="card">
+    <h2>📍 Where should we bring it from? <br><small style="font-weight:400;color:var(--muted)">ከየት እንምጣ?</small></h2>
+    <div class="chips three">
+      <label class="chip"><input type="radio" name="pickup" value="Bole" required><span><em>🏪</em>Bole</span></label>
+      <label class="chip"><input type="radio" name="pickup" value="Geda"><span><em>🏪</em>Geda</span></label>
+      <label class="chip"><input type="radio" name="pickup" value="Other"><span><em>✏️</em>Other</span></label>
+    </div>
+    <div class="reveal" id="pickupOtherWrap">
+      <label class="field" for="pickupOther">Write the place <small>(ቦታውን ይጻፉ)</small></label>
+      <input type="text" id="pickupOther" placeholder="e.g. Mercato Shop, Kebele 05 ...">
+      <div class="err" id="pickupOtherErr">Please write the pickup place.</div>
+    </div>
+    <div class="err" id="pickupErr">Please choose a pickup place.</div>
+  </div>
+
+  <!-- 2. Material type -->
+  <div class="card">
+    <h2>📦 What do you need? <br><small style="font-weight:400;color:var(--muted)">ምን ይፈልጋሉ?</small></h2>
+    <div class="chips">
+      <label class="chip"><input type="radio" name="category" value="Food" required><span><em>🍽️</em>Food · ምግብ</span></label>
+      <label class="chip"><input type="radio" name="category" value="Medicine"><span><em>💊</em>Medicine · መድኃኒት</span></label>
+      <label class="chip"><input type="radio" name="category" value="Jar Water"><span><em>💧</em>Jar Water · የጃር ውሃ</span></label>
+      <label class="chip"><input type="radio" name="category" value="Other"><span><em>🛒</em>Other · ሌላ</span></label>
+    </div>
+    <div class="reveal" id="categoryOtherWrap">
+      <label class="field" for="categoryOther">What kind of item? <small>(ዓይነቱን ይጻፉ)</small></label>
+      <input type="text" id="categoryOther" placeholder="e.g. Stationery, Toiletries ...">
+      <div class="err" id="categoryOtherErr">Please write the type of item.</div>
+    </div>
+    <div class="err" id="categoryErr">Please choose a type.</div>
+
+    <label class="field" for="itemName" style="margin-top:16px">Name of the material <small>(የዕቃው ስም)</small></label>
+    <input type="text" id="itemName" placeholder="e.g. Shiro with injera, Paracetamol, Notebook">
+    <div class="err" id="itemNameErr">Please write the name of the material.</div>
+
+    <label class="field" for="quantity">How much / how many? <small>(ምን ያህል?)</small></label>
+    <div class="stepper">
+      <button type="button" id="minus" aria-label="decrease">−</button>
+      <input type="number" id="quantity" value="1" min="1" inputmode="numeric">
+      <button type="button" id="plus" aria-label="increase">+</button>
+    </div>
+    <div class="err" id="quantityErr">Quantity must be at least 1.</div>
+  </div>
+
+  <!-- 3. Delivery details -->
+  <div class="card">
+    <h2>🏠 Delivery details <br><small style="font-weight:400;color:var(--muted)">የሚደርስበት</small></h2>
+
+    <label class="field" for="phone">Phone number <small>(ስልክ ቁጥር)</small></label>
+    <input type="tel" id="phone" placeholder="09XXXXXXXX" inputmode="tel" maxlength="13">
+    <div class="err" id="phoneErr">Enter a valid phone number, e.g. 0912345678.</div>
+
+    <div class="row">
+      <div>
+        <label class="field" for="block">Building block <small>(ብሎክ)</small></label>
+        <input type="text" id="block" placeholder="e.g. 45">
+        <div class="err" id="blockErr">Required.</div>
+      </div>
+      <div>
+        <label class="field" for="dorm">Dorm number <small>(ዶርም)</small></label>
+        <input type="text" id="dorm" placeholder="e.g. 212">
+        <div class="err" id="dormErr">Required.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Only shown when opened outside Telegram (for testing) -->
+  <button type="submit" class="submit">Send Order · ትዕዛዝ ላክ</button>
+</form>
+
+<div class="done" id="done">
+  <div class="tick">✅</div>
+  <h2>Order ready!</h2>
+  <p>(Test mode — opened outside Telegram)</p>
+  <pre id="dump"></pre>
+</div>
+
+<script>
+(function () {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const insideTelegram = !!(tg && tg.initData);
+
+  if (tg) { tg.ready(); tg.expand(); }
+  if (!insideTelegram) document.body.classList.add('no-telegram');
+
+  const $ = (id) => document.getElementById(id);
+  const form = $('orderForm');
+
+  /* ---------- show/hide "Other" fields ---------- */
+  function radioValue(name) {
+    const r = form.querySelector('input[name="' + name + '"]:checked');
+    return r ? r.value : '';
+  }
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'pickup') {
+      $('pickupOtherWrap').classList.toggle('show', e.target.value === 'Other');
+      $('pickupErr').classList.remove('show');
+    }
+    if (e.target.name === 'category') {
+      $('categoryOtherWrap').classList.toggle('show', e.target.value === 'Other');
+      $('categoryErr').classList.remove('show');
+    }
+  });
+
+  /* ---------- quantity stepper ---------- */
+  const qty = $('quantity');
+  $('minus').onclick = () => { qty.value = Math.max(1, (parseInt(qty.value) || 1) - 1); };
+  $('plus').onclick  = () => { qty.value = (parseInt(qty.value) || 0) + 1; };
+
+  /* ---------- helpers ---------- */
+  function normalizePhone(raw) {
+    let p = raw.replace(/[\s\-()]/g, '');
+    if (p.startsWith('+251')) p = '0' + p.slice(4);
+    else if (p.startsWith('251')) p = '0' + p.slice(3);
+    return /^0[79]\d{8}$/.test(p) ? p : null;
+  }
+  function flag(inputId, errId, bad) {
+    const el = $(inputId), er = $(errId);
+    if (el) el.classList.toggle('invalid', bad);
+    er.classList.toggle('show', bad);
+    return bad;
+  }
+
+  /* ---------- validate + collect and ---------- */
+  function collect() {
+    let bad = false;
+    const pickup = radioValue('pickup');
+    const category = radioValue('category');
+
+    $('pickupErr').classList.toggle('show', !pickup);
+    bad = bad || !pickup;
+    $('categoryErr').classList.toggle('show', !category);
+    bad = bad || !category;
+
+
+    const pickupOther = $('pickupOther').value.trim();
+    const categoryOther = $('categoryOther').value.trim();
+    if (pickup === 'Other') bad = flag('pickupOther', 'pickupOtherErr', !pickupOther) || bad;
+    if (category === 'Other') bad = flag('categoryOther', 'categoryOtherErr', !categoryOther) || bad;
+
+    const itemName = $('itemName').value.trim();
+    bad = flag('itemName', 'itemNameErr', !itemName) || bad;
+
+    const quantity = parseInt(qty.value, 10);
+    bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
+
+    const phone = normalizePhone($('phone').value);
+    bad = flag('phone', 'phoneErr', !phone) || bad;
+
+    const block = $('block').value.trim();
+    const dorm = $('dorm').value.trim();
+    bad = flag('block', 'blockErr', !block) || bad;
+    bad = flag('dorm', 'dormErr', !dorm) || bad;
+
+    if (bad) return null;
+
+    return {
+      pickup: pickup === 'Other' ? pickupOther : pickup,
+      category: category === 'Other' ? categoryOther : category,
+      item: itemName,
+      quantity: quantity,
+      phone: phone,
+      block: block,
+      dorm: dorm,
+      user: tg && tg.initDataUnsafe && tg.initDataUnsafe.user
+        ? {
+            id: tg.initDataUnsafe.user.id,
+            name: [tg.initDataUnsafe.user.first_name, tg.initDataUnsafe.user.last_name].filter(Boolean).join(' '),
+            username: tg.initDataUnsafe.user.username || null
+          }
+        : null,
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function submit() {
+    const data = collect();
+    if (!data) {
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+      const firstErr = document.querySelector('.err.show');
+      if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (insideTelegram) {
+      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      tg.sendData(JSON.stringify(data));   // closes the Mini App and sends data to the bot
+    } else {
+      form.style.display = 'none';
+      $('done').style.display = 'block';
+      $('dump').textContent = JSON.stringify(data, null, 2);
+    }
+  }
+
+  form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+
+  /* ---------- Telegram main button ---------- */
+  if (insideTelegram) {
+    tg.MainButton.setParams({
+      text: 'SEND ORDER · ትዕዛዝ ላክ',
+      color: '#14213d',
+      text_color: '#ffd60a'
+    });
+    tg.MainButton.show();
+    tg.MainButton.onClick(submit);
+  }
+})();
+</script>
+</body>
+</html>
