@@ -206,7 +206,7 @@
 <script>
 (function () {
   const tg = window.Telegram && window.Telegram.WebApp;
-  const insideTelegram = !!(tg && tg.initData);
+  const insideTelegram = !!(tg && (tg.initData || (tg.platform && tg.platform !== 'unknown')));
 
   if (tg) { tg.ready(); tg.expand(); }
   if (!insideTelegram) document.body.classList.add('no-telegram');
@@ -249,7 +249,7 @@
     return bad;
   }
 
-  /* ---------- validate + collect and ---------- */
+  /* ---------- validate + collect ---------- */
   function collect() {
     let bad = false;
     const pickup = radioValue('pickup');
@@ -259,7 +259,6 @@
     bad = bad || !pickup;
     $('categoryErr').classList.toggle('show', !category);
     bad = bad || !category;
-
 
     const pickupOther = $('pickupOther').value.trim();
     const categoryOther = $('categoryOther').value.trim();
