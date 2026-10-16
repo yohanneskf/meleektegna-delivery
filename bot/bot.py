@@ -1,21 +1,35 @@
 """
 መልእክተኛው delivery - Telegram bot
-Opens the order Mini App, receives the order, forwards it to the admin /
-riders' group, and confirms to the student.
+
+* /start shows a persistent "Order Now" keyboard button.
+* The Telegram MENU BUTTON (next to the message box) is set to open the same
+  order form, so students can order without ever sending /start.
+* Orders arrive either
+    - from the menu button  -> the form POSTs to this server's /order endpoint
+      (verified with Telegram's signed initData), or
+    - from the keyboard button -> Telegram's web_app_data message.
+  Both end up as the same message for the admin / riders, plus a confirmation
+  for the student.
 """
+import hashlib
+import hmac
 import html
 import json
 import logging
 import os
 import threading
+import time
+import urllib.parse
+import urllib.request
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from dotenv import load_dotenv
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    MenuButtonWebApp,
     ReplyKeyboardMarkup,
     Update,
     WebAppInfo,
@@ -35,12 +49,17 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ["WEBAPP_URL"]            # https://your-site.vercel.app
 ADMIN_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])  # your id or the riders' group id
 
+# Which website may call /order (CORS). Defaults to the host of WEBAPP_URL.
+_u = urllib.parse.urlparse(WEBAPP_URL)
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN") or f"{_u.scheme}://{_u.netloc}"
+
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO
 )
 log = logging.getLogger("meleektegna")
 
 ORDER_BUTTON = "🛵 Order Now · ትዕዛዝ ይስጡ"
+MENU_BUTTON_TEXT = "Order Now"
 
 CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Other": "🛒"}
 
@@ -50,19 +69,117 @@ def e(value) -> str:
     return html.escape(str(value))
 
 
-def order_keyboard() -> ReplyKeyboardMarkup:
-    # sendData() from the Mini App only works when opened from a *keyboard* button.
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton(ORDER_BUTTON, web_app=WebAppInfo(url=WEBAPP_URL))]],
-        resize_keyboard=True,
+# ----------------------------------------------------------------------------
+# Order parsing / formatting (shared by both ways an order can arrive)
+# ----------------------------------------------------------------------------
+def parse_order(d: dict) -> dict:
+    """Validate the order JSON sent by the Mini App. Raises ValueError if bad."""
+    try:
+        category = str(d["category"])
+        if category not in CATEGORY_ICON:
+            raise ValueError("unknown category")
+        o = {
+            "category": category,
+            "name": str(d["name"]).strip()[:80],
+            "phone": str(d["phone"]).strip()[:20],
+            "block": str(d["block"]).strip()[:20],
+            "dorm": str(d["dorm"]).strip()[:20],
+        }
+        if not all(o[k] for k in ("name", "phone", "block", "dorm")):
+            raise ValueError("empty field")
+
+        if category == "Jar Water":
+            jar = d["jar"]
+            liters, price, count = int(jar["liters"]), int(jar["price"]), int(jar["count"])
+            if not (liters > 0 and price > 0 and 1 <= count <= 100):
+                raise ValueError("bad jar values")
+            o.update(liters=liters, price=price, count=count, total=price * count)
+        else:
+            o.update(
+                pickup=str(d["pickup"]).strip()[:80],
+                place=str(d["place"]).strip()[:100],
+                item=str(d["item"]).strip()[:200],
+                quantity=int(d["quantity"]),
+            )
+            if not (o["pickup"] and o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
+                raise ValueError("bad order values")
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"malformed order: {exc!r}") from exc
+    return o
+
+
+def render_order(o: dict, user_id: int, full_name: str, username: str | None):
+    """Return (order_no, admin_text, student_text)."""
+    order_no = datetime.now().strftime("%d%H%M%S")
+    handle = f"@{username}" if username else "—"
+    category = o["category"]
+    icon = CATEGORY_ICON.get(category, "📦")
+
+    if category == "Jar Water":
+        details = (
+            f"{icon} <b>Type:</b> Jar Water\n"
+            f"🪣 <b>Size:</b> {o['liters']} Liter\n"
+            f"🔢 <b>Jars:</b> {o['count']}\n"
+            f"💰 <b>Price:</b> {o['price']} Birr each → <b>{o['total']} Birr</b>"
+        )
+        student_summary = (
+            f"💧 Jar Water {o['liters']}L × {o['count']}\n💰 Total: {o['total']} Birr"
+        )
+    else:
+        details = (
+            f"{icon} <b>Type:</b> {e(category)}\n"
+            f"📍 <b>Pick up from:</b> {e(o['pickup'])}\n"
+            f"🏪 <b>Place:</b> {e(o['place'])}\n"
+            f"📝 <b>Item:</b> {e(o['item'])}\n"
+            f"🔢 <b>Quantity:</b> {o['quantity']}"
+        )
+        student_summary = (
+            f"{icon} {e(o['item'])} × {o['quantity']}\n📍 {e(o['pickup'])} · {e(o['place'])}"
+        )
+
+    admin_text = (
+        f"🆕 <b>New Order #{order_no}</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"{details}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"👤 <b>Name:</b> {e(o['name'])}\n"
+        f"🏠 <b>Block:</b> {e(o['block'])}   <b>Dorm:</b> {e(o['dorm'])}\n"
+        f"📞 <b>Phone:</b> {e(o['phone'])}\n"
+        f"💬 <b>Telegram:</b> {e(full_name)} ({e(handle)})"
+    )
+    student_text = (
+        f"✅ <b>ትዕዛዝዎ ደርሶናል! Order received!</b>\n"
+        f"Order #{order_no}\n\n"
+        f"{student_summary}\n"
+        f"🏠 Block {e(o['block'])}, Dorm {e(o['dorm'])}\n\n"
+        f"We'll call you on {e(o['phone'])} shortly. 🛵"
+    )
+    return order_no, admin_text, student_text
+
+
+def take_button(order_no: str, user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("✅ I'll take it", callback_data=f"take:{order_no}:{user_id}")]]
     )
 
 
+def order_keyboard() -> ReplyKeyboardMarkup:
+    # Persistent keyboard button: stays visible under the chat after /start.
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(ORDER_BUTTON, web_app=WebAppInfo(url=WEBAPP_URL))]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+# ----------------------------------------------------------------------------
+# Telegram handlers
+# ----------------------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 እንኳን ደህና መጡ! Welcome to <b>መልእክተኛው delivery</b> – ASTU Student Delivery Service.\n\n"
         "Food 🍽️ · Medicine 💊 · Jar Water 💧 · Other essentials 🛒\n\n"
-        "Tap the button below to place your order 👇",
+        "Tap <b>Order Now</b> below 👇",
         parse_mode=ParseMode.HTML,
         reply_markup=order_keyboard(),
     )
@@ -74,80 +191,27 @@ async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Order that arrives through the keyboard button (web_app_data)."""
     msg = update.effective_message
     user = update.effective_user
-
     try:
-        d = json.loads(msg.web_app_data.data)
-        category = d["category"]
-        name, phone = d["name"], d["phone"]
-        block, dorm = d["block"], d["dorm"]
-        is_jar = category == "Jar Water"
-        if is_jar:
-            jar = d["jar"]
-            liters, price = int(jar["liters"]), int(jar["price"])
-            count, total = int(jar["count"]), int(jar["total"])
-        else:
-            pickup, place, item = d["pickup"], d["place"], d["item"]
-            quantity = int(d["quantity"])
-    except (ValueError, KeyError, TypeError):
+        o = parse_order(json.loads(msg.web_app_data.data))
+    except ValueError:
         log.exception("Bad order payload: %r", msg.web_app_data.data)
         await msg.reply_text("❌ Sorry, something went wrong with your order. Please try again.")
         return
 
-    order_no = datetime.now().strftime("%d%H%M%S")
-    username = f"@{user.username}" if user.username else "—"
-    icon = CATEGORY_ICON.get(category, "📦")
-
-    # ---------- details block (differs for jar vs. other categories) ----------
-    if is_jar:
-        details = (
-            f"{icon} <b>Type:</b> Jar Water\n"
-            f"🪣 <b>Size:</b> {liters} Liter\n"
-            f"🔢 <b>Jars:</b> {count}\n"
-            f"💰 <b>Price:</b> {price} Birr each → <b>{total} Birr</b>"
-        )
-        student_summary = f"💧 Jar Water {liters}L × {count}\n💰 Total: {total} Birr"
-    else:
-        details = (
-            f"{icon} <b>Type:</b> {e(category)}\n"
-            f"📍 <b>Pick up from:</b> {e(pickup)}\n"
-            f"🏪 <b>Place:</b> {e(place)}\n"
-            f"📝 <b>Item:</b> {e(item)}\n"
-            f"🔢 <b>Quantity:</b> {quantity}"
-        )
-        student_summary = f"{icon} {e(item)} × {quantity}\n📍 {e(pickup)} · {e(place)}"
-
-    # 1) message to admin / riders
-    admin_text = (
-        f"🆕 <b>New Order #{order_no}</b>\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"{details}\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"👤 <b>Name:</b> {e(name)}\n"
-        f"🏠 <b>Block:</b> {e(block)}   <b>Dorm:</b> {e(dorm)}\n"
-        f"📞 <b>Phone:</b> {e(phone)}\n"
-        f"💬 <b>Telegram:</b> {e(user.full_name)} ({e(username)})"
-    )
-    buttons = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("✅ I'll take it", callback_data=f"take:{order_no}:{user.id}")]]
+    order_no, admin_text, student_text = render_order(
+        o, user.id, user.full_name, user.username
     )
     await context.bot.send_message(
         chat_id=ADMIN_CHAT_ID,
         text=admin_text,
         parse_mode=ParseMode.HTML,
-        reply_markup=buttons,
+        reply_markup=take_button(order_no, user.id),
     )
-
-    # 2) confirmation to the student
     await msg.reply_text(
-        f"✅ <b>ትዕዛዝዎ ደርሶናል! Order received!</b>\n"
-        f"Order #{order_no}\n\n"
-        f"{student_summary}\n"
-        f"🏠 Block {e(block)}, Dorm {e(dorm)}\n\n"
-        f"We'll call you on {e(phone)} shortly. 🛵",
-        parse_mode=ParseMode.HTML,
-        reply_markup=order_keyboard(),
+        student_text, parse_mode=ParseMode.HTML, reply_markup=order_keyboard()
     )
 
 
@@ -172,10 +236,87 @@ async def rider_took(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.warning("Could not notify student %s", student_id)
 
 
-class HealthHandler(BaseHTTPRequestHandler):
-    """Tiny web page so Render (web service) sees an open port and
-    UptimeRobot can ping it to keep the bot awake."""
+async def post_init(app: Application):
+    """Runs once at startup: make 'Order Now' the permanent menu button."""
+    try:
+        await app.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=MENU_BUTTON_TEXT, web_app=WebAppInfo(url=WEBAPP_URL)
+            )
+        )
+        log.info("Menu button set to the order form")
+    except Exception:
+        log.exception("Could not set the menu button")
 
+
+# ----------------------------------------------------------------------------
+# Small web server: health page (for UptimeRobot) + POST /order (menu button)
+# ----------------------------------------------------------------------------
+def tg_api(method: str, payload: dict) -> dict:
+    """Call the Telegram Bot API directly (used by the web server thread)."""
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/{method}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.load(resp)
+
+
+def validate_init_data(init_data: str, max_age: int = 86400) -> dict:
+    """Check Telegram's signature on initData and return the user dict."""
+    pairs = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    received = pairs.pop("hash", None)
+    if not received:
+        raise ValueError("no hash")
+    check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, received):
+        raise ValueError("bad signature")
+    if time.time() - int(pairs.get("auth_date", "0")) > max_age:
+        raise ValueError("expired")
+    return json.loads(pairs["user"])
+
+
+def send_order_via_api(o: dict, user: dict):
+    full_name = " ".join(filter(None, [user.get("first_name"), user.get("last_name")]))
+    order_no, admin_text, student_text = render_order(
+        o, user["id"], full_name or "—", user.get("username")
+    )
+    tg_api("sendMessage", {
+        "chat_id": ADMIN_CHAT_ID,
+        "text": admin_text,
+        "parse_mode": "HTML",
+        "reply_markup": {"inline_keyboard": [[
+            {"text": "✅ I'll take it", "callback_data": f"take:{order_no}:{user['id']}"}
+        ]]},
+    })
+    try:
+        tg_api("sendMessage", {
+            "chat_id": user["id"], "text": student_text, "parse_mode": "HTML"
+        })
+    except Exception:
+        log.warning("Could not send confirmation to student %s", user["id"])
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Vary", "Origin")
+
+    def _json(self, status: int, body: dict):
+        data = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(data)
+
+    # health page
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -186,22 +327,47 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/order":
+            return self._json(404, {"ok": False, "error": "not found"})
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            if not 0 < length <= 20000:
+                return self._json(413, {"ok": False, "error": "bad size"})
+            body = json.loads(self.rfile.read(length))
+            user = validate_init_data(body["initData"])
+            order = parse_order(body["order"])
+        except (ValueError, KeyError, TypeError):
+            log.warning("Rejected /order request", exc_info=True)
+            return self._json(400, {"ok": False, "error": "invalid request"})
+        try:
+            send_order_via_api(order, user)
+        except Exception:
+            log.exception("Could not deliver order to admin")
+            return self._json(502, {"ok": False, "error": "could not deliver"})
+        self._json(200, {"ok": True})
+
     def log_message(self, *args):
         pass  # keep the logs clean
 
 
-def start_health_server():
+def start_web_server():
     port = os.environ.get("PORT")  # Render sets this automatically
     if not port:
         return  # running locally, no need
-    server = HTTPServer(("0.0.0.0", int(port)), HealthHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", int(port)), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    log.info("Health server listening on port %s", port)
+    log.info("Web server listening on port %s", port)
 
 
 def main():
-    start_health_server()
-    app = Application.builder().token(BOT_TOKEN).build()
+    start_web_server()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", my_id))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_order))
