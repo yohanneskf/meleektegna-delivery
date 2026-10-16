@@ -1,7 +1,7 @@
 """
 መልእክተኛው delivery - Telegram bot
-Opens the order Mini App, receives the order, forwards it to the riders'
-group/admin, and confirms to the student.
+Opens the order Mini App, receives the order, forwards it to the admin /
+riders' group, and confirms to the student.
 """
 import html
 import json
@@ -32,7 +32,7 @@ from telegram.ext import (
 
 load_dotenv()
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBAPP_URL = os.environ["WEBAPP_URL"]            # https://your-site.com/index.html
+WEBAPP_URL = os.environ["WEBAPP_URL"]            # https://your-site.vercel.app
 ADMIN_CHAT_ID = int(os.environ["ADMIN_CHAT_ID"])  # your id or the riders' group id
 
 logging.basicConfig(
@@ -41,6 +41,8 @@ logging.basicConfig(
 log = logging.getLogger("meleektegna")
 
 ORDER_BUTTON = "🛵 Order Now · ትዕዛዝ ይስጡ"
+
+CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Other": "🛒"}
 
 
 def e(value) -> str:
@@ -77,9 +79,17 @@ async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         d = json.loads(msg.web_app_data.data)
-        pickup, category, item = d["pickup"], d["category"], d["item"]
-        quantity, phone = int(d["quantity"]), d["phone"]
+        category = d["category"]
+        name, phone = d["name"], d["phone"]
         block, dorm = d["block"], d["dorm"]
+        is_jar = category == "Jar Water"
+        if is_jar:
+            jar = d["jar"]
+            liters, price = int(jar["liters"]), int(jar["price"])
+            count, total = int(jar["count"]), int(jar["total"])
+        else:
+            pickup, place, item = d["pickup"], d["place"], d["item"]
+            quantity = int(d["quantity"])
     except (ValueError, KeyError, TypeError):
         log.exception("Bad order payload: %r", msg.web_app_data.data)
         await msg.reply_text("❌ Sorry, something went wrong with your order. Please try again.")
@@ -87,19 +97,37 @@ async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     order_no = datetime.now().strftime("%d%H%M%S")
     username = f"@{user.username}" if user.username else "—"
+    icon = CATEGORY_ICON.get(category, "📦")
 
-    # 1) message to riders / admin
+    # ---------- details block (differs for jar vs. other categories) ----------
+    if is_jar:
+        details = (
+            f"{icon} <b>Type:</b> Jar Water\n"
+            f"🪣 <b>Size:</b> {liters} Liter\n"
+            f"🔢 <b>Jars:</b> {count}\n"
+            f"💰 <b>Price:</b> {price} Birr each → <b>{total} Birr</b>"
+        )
+        student_summary = f"💧 Jar Water {liters}L × {count}\n💰 Total: {total} Birr"
+    else:
+        details = (
+            f"{icon} <b>Type:</b> {e(category)}\n"
+            f"📍 <b>Pick up from:</b> {e(pickup)}\n"
+            f"🏪 <b>Place:</b> {e(place)}\n"
+            f"📝 <b>Item:</b> {e(item)}\n"
+            f"🔢 <b>Quantity:</b> {quantity}"
+        )
+        student_summary = f"{icon} {e(item)} × {quantity}\n📍 {e(pickup)} · {e(place)}"
+
+    # 1) message to admin / riders
     admin_text = (
         f"🆕 <b>New Order #{order_no}</b>\n"
         f"━━━━━━━━━━━━━━\n"
-        f"📍 <b>Pick up from:</b> {e(pickup)}\n"
-        f"📦 <b>Type:</b> {e(category)}\n"
-        f"📝 <b>Item:</b> {e(item)}\n"
-        f"🔢 <b>Quantity:</b> {quantity}\n"
+        f"{details}\n"
         f"━━━━━━━━━━━━━━\n"
+        f"👤 <b>Name:</b> {e(name)}\n"
         f"🏠 <b>Block:</b> {e(block)}   <b>Dorm:</b> {e(dorm)}\n"
         f"📞 <b>Phone:</b> {e(phone)}\n"
-        f"👤 <b>Student:</b> {e(user.full_name)} ({e(username)})"
+        f"💬 <b>Telegram:</b> {e(user.full_name)} ({e(username)})"
     )
     buttons = InlineKeyboardMarkup(
         [[InlineKeyboardButton("✅ I'll take it", callback_data=f"take:{order_no}:{user.id}")]]
@@ -115,8 +143,7 @@ async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(
         f"✅ <b>ትዕዛዝዎ ደርሶናል! Order received!</b>\n"
         f"Order #{order_no}\n\n"
-        f"📦 {e(item)} × {quantity}\n"
-        f"📍 From: {e(pickup)}\n"
+        f"{student_summary}\n"
         f"🏠 Block {e(block)}, Dorm {e(dorm)}\n\n"
         f"We'll call you on {e(phone)} shortly. 🛵",
         parse_mode=ParseMode.HTML,
@@ -125,17 +152,15 @@ async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def rider_took(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """A rider presses 'I'll take it' in the group."""
+    """A rider presses 'I'll take it' in the chat."""
     q = update.callback_query
     _, order_no, student_id = q.data.split(":")
     rider = q.from_user
     await q.answer("Order assigned to you ✅")
 
-    # Mark the order as taken in the group and remove the button
     new_text = q.message.text_html + f"\n\n🛵 <b>Taken by:</b> {e(rider.full_name)}"
     await q.edit_message_text(new_text, parse_mode=ParseMode.HTML)
 
-    # Tell the student
     try:
         await context.bot.send_message(
             chat_id=int(student_id),

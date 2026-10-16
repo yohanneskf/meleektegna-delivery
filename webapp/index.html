@@ -2,238 +2,451 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1530">
 <title>መልእክተኛው Delivery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Ethiopic:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --navy: #14213d;
+    --navy-900: #0b1530;
+    --navy-700: #14213d;
+    --navy-500: #26365f;
     --yellow: #ffd60a;
-    --bg: #f4f6fb;
+    --yellow-soft: #fff6c2;
+    --bg: #f3f5fb;
     --card: #ffffff;
-    --text: #14213d;
-    --muted: #6b7280;
-    --border: #d9deea;
-    --error: #d62828;
+    --text: #0f1b3a;
+    --muted: #7a859f;
+    --line: #e3e8f2;
+    --error: #e5383b;
+    --radius: 20px;
+    --shadow: 0 10px 30px -12px rgba(11, 21, 48, .18);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
   body {
-    margin: 0;
-    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Ethiopic", sans-serif;
+    font-family: "Plus Jakarta Sans", "Noto Sans Ethiopic", -apple-system, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
-    padding-bottom: 96px;
+    padding-bottom: 120px;
+    -webkit-font-smoothing: antialiased;
   }
-  header {
-    background: var(--navy);
-    color: #fff;
-    padding: 22px 16px 26px;
-    text-align: center;
-    border-bottom: 5px solid var(--yellow);
-  }
-  header h1 { margin: 0; font-size: 22px; color: var(--yellow); }
-  header p { margin: 4px 0 0; font-size: 13px; opacity: .9; }
+  img { display: block; }
 
-  form { max-width: 520px; margin: 0 auto; padding: 16px; }
+  /* ---------- HERO ---------- */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(120% 140% at 85% -10%, #2c4380 0%, var(--navy-900) 55%);
+    color: #fff;
+    padding: 28px 20px 70px;
+    min-height: 210px;
+  }
+  .hero-photo {
+    position: absolute; right: 0; bottom: 0; height: 100%; width: 58%;
+    object-fit: cover; object-position: 60% 30%;
+    opacity: .9;
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+            mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: auto 0 0 0; height: 70px;
+    background: linear-gradient(to top, rgba(11,21,48,.55), transparent);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+  .logo {
+    flex: none; width: 56px; height: 56px; border-radius: 17px; overflow: hidden;
+    background: #fff; border: 2px solid var(--yellow);
+    box-shadow: 0 8px 20px -6px rgba(255, 214, 10, .6);
+  }
+  .logo img { width: 100%; height: 100%; object-fit: cover; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.3px; line-height: 1.15; }
+  .brand h1 span { color: var(--yellow); }
+  .brand p { margin: 3px 0 0; font-size: 12px; opacity: .8; }
+  .hero-tag {
+    position: relative; z-index: 1;
+    margin-top: 26px; font-size: 24px; line-height: 1.2; font-weight: 800; letter-spacing: -.4px;
+    text-shadow: 0 2px 12px rgba(11,21,48,.6);
+  }
+  .hero-tag em { font-style: normal; color: var(--yellow); }
+
+  /* ---------- LAYOUT ---------- */
+  form { max-width: 540px; margin: -44px auto 0; padding: 0 14px; position: relative; z-index: 2; }
   .card {
     background: var(--card);
-    border-radius: 16px;
-    padding: 16px;
+    border-radius: var(--radius);
+    padding: 18px;
     margin-bottom: 14px;
-    box-shadow: 0 2px 8px rgba(20,33,61,.06);
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(255,255,255,.6);
   }
-  .card h2 { margin: 0 0 12px; font-size: 15px; color: var(--navy); }
+  .step { display: none; }
+  .step.show { display: block; animation: rise .35s cubic-bezier(.2,.8,.2,1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 
-  label.field { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
-  label.field:first-of-type { margin-top: 0; }
-  label.field small { font-weight: 400; color: var(--muted); }
-
-  input[type=text], input[type=tel], input[type=number], textarea {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    font-size: 16px;
-    background: #fff;
-    color: var(--text);
-    outline: none;
+  .card h2 {
+    margin: 0 0 14px; font-size: 16px; font-weight: 700;
+    display: flex; align-items: center; gap: 10px;
   }
-  input:focus, textarea:focus { border-color: var(--navy); }
-  .invalid { border-color: var(--error) !important; }
-  .err { color: var(--error); font-size: 12px; margin-top: 4px; display: none; }
+  .card h2 small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 1px; }
+  .num {
+    flex: none; width: 28px; height: 28px; border-radius: 9px;
+    background: var(--navy-700); color: var(--yellow);
+    display: grid; place-items: center; font-size: 13px; font-weight: 800;
+  }
+
+  /* ---------- FIELDS ---------- */
+  .field { margin-top: 14px; }
+  .field:first-of-type { margin-top: 0; }
+  .field > label, .row > div > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 7px; }
+  .field > label small, .row > div > label small { font-weight: 400; color: var(--muted); }
+  .input {
+    width: 100%; padding: 14px 15px;
+    border: 1.5px solid var(--line); border-radius: 14px;
+    font: inherit; font-size: 16px; color: var(--text);
+    background: #f9fafd; outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .input::placeholder { color: #aab3c8; }
+  .input:focus { border-color: var(--navy-700); background: #fff; box-shadow: 0 0 0 4px rgba(20, 33, 61, .08); }
+  .input.invalid { border-color: var(--error); background: #fff6f6; }
+  .err { display: none; color: var(--error); font-size: 12px; margin-top: 5px; font-weight: 500; }
   .err.show { display: block; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
-  /* option chips */
-  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .chips.three { grid-template-columns: 1fr 1fr 1fr; }
-  .chip input { position: absolute; opacity: 0; pointer-events: none; }
-  .chip span {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 2px;
-    min-height: 62px;
-    padding: 8px 6px;
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    font-size: 13px; font-weight: 600; text-align: center;
-    background: #fff;
-    cursor: pointer;
+  /* ---------- CATEGORY TILES (photos) ---------- */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile input, .chip input, .size input { position: absolute; opacity: 0; pointer-events: none; }
+  .tile > span {
+    position: relative; display: block;
+    padding: 7px 7px 10px; border-radius: 20px; cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform .15s, box-shadow .15s, border-color .15s;
+  }
+  .tile > span:active { transform: scale(.97); }
+  .tile .pic {
+    width: 100%; height: 92px; object-fit: cover;
+    border-radius: 14px; background: rgba(255,255,255,.6);
+  }
+  .tile b { display: block; padding: 9px 5px 0; font-size: 15px; font-weight: 800; line-height: 1.15; }
+  .tile b small { display: block; font-weight: 600; font-size: 12px; opacity: .7; margin-top: 2px; }
+  .t-food   > span { background: linear-gradient(145deg, #fff3b0, #ffe066); }
+  .t-med    > span { background: linear-gradient(145deg, #d8f6e1, #a9e9bd); }
+  .t-jar    > span { background: linear-gradient(145deg, #d9eeff, #a8d6fb); }
+  .t-other  > span { background: linear-gradient(145deg, #eadcff, #cfb4fb); }
+  .tile input:checked + span {
+    border-color: var(--navy-700);
+    box-shadow: 0 12px 24px -10px rgba(11,21,48,.55);
+    transform: translateY(-2px);
+  }
+  .tile input:checked + span::after {
+    content: "✓"; position: absolute; top: 14px; right: 14px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--navy-700); color: var(--yellow);
+    display: grid; place-items: center; font-size: 13px; font-weight: 800;
+    box-shadow: 0 4px 10px rgba(0,0,0,.25);
+  }
+
+  /* ---------- CHIPS ---------- */
+  .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .chip > span {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 48px; padding: 8px; border-radius: 14px;
+    border: 1.5px solid var(--line); background: #f9fafd;
+    font-size: 14px; font-weight: 700; cursor: pointer;
     transition: all .15s;
   }
-  .chip span em { font-style: normal; font-size: 20px; }
   .chip input:checked + span {
-    border-color: var(--navy);
-    background: var(--yellow);
-    box-shadow: 0 0 0 2px var(--navy) inset;
+    background: var(--navy-700); color: var(--yellow); border-color: var(--navy-700);
+    box-shadow: 0 8px 16px -8px rgba(20,33,61,.6);
   }
 
   .reveal { display: none; margin-top: 12px; }
-  .reveal.show { display: block; }
+  .reveal.show { display: block; animation: rise .3s ease; }
 
-  /* quantity stepper */
+  /* ---------- JAR SIZES ---------- */
+  .sizes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .size > span {
+    display: block; padding: 7px 7px 12px; border-radius: 20px; cursor: pointer;
+    background: linear-gradient(160deg, #f0f8ff, #cfe8ff);
+    border: 2px solid transparent; text-align: center;
+    transition: all .15s;
+  }
+  .size .jarpic { width: 100%; height: 84px; object-fit: cover; border-radius: 14px; }
+  .size .lit { display: block; margin-top: 9px; font-size: 22px; font-weight: 800; }
+  .size .lit small { font-size: 13px; font-weight: 600; }
+  .size .pr { display: block; font-size: 14px; font-weight: 700; color: var(--navy-500); margin-top: 1px; }
+  .size input:checked + span {
+    border-color: var(--navy-700);
+    background: linear-gradient(160deg, #ffffff, #bfe0ff);
+    box-shadow: 0 12px 22px -10px rgba(20,33,61,.55);
+  }
+  .total {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 16px; padding: 14px 16px; border-radius: 14px;
+    background: var(--yellow-soft); font-weight: 600; font-size: 14px;
+  }
+  .total b { font-size: 20px; font-weight: 800; }
+
+  /* ---------- STEPPER ---------- */
   .stepper { display: flex; align-items: center; gap: 10px; }
   .stepper button {
-    width: 46px; height: 46px; border: none; border-radius: 12px;
-    background: var(--navy); color: var(--yellow);
-    font-size: 24px; font-weight: 700; cursor: pointer;
+    flex: none; width: 50px; height: 50px; border: none; border-radius: 14px;
+    background: var(--navy-700); color: var(--yellow);
+    font-size: 24px; font-weight: 700; cursor: pointer; transition: transform .1s;
   }
-  .stepper input { text-align: center; flex: 1; }
+  .stepper button:active { transform: scale(.92); }
+  .stepper .input { text-align: center; font-weight: 700; font-size: 18px; }
 
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
+  /* ---------- BUTTONS / FOOTER ---------- */
   .submit {
-    display: none;
-    width: 100%; padding: 15px; border: none; border-radius: 14px;
-    background: var(--navy); color: var(--yellow);
-    font-size: 17px; font-weight: 700; cursor: pointer;
+    display: none; width: 100%; padding: 17px; border: none; border-radius: 16px;
+    background: linear-gradient(135deg, var(--navy-500), var(--navy-900)); color: var(--yellow);
+    font: inherit; font-size: 16px; font-weight: 800; cursor: pointer;
+    box-shadow: 0 14px 26px -12px rgba(11,21,48,.7);
   }
   body.no-telegram .submit { display: block; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; margin: 16px 0 0; }
 
-  .done {
-    display: none; text-align: center; padding: 60px 20px;
+  .done { display: none; max-width: 540px; margin: -30px auto 0; padding: 0 14px; position: relative; z-index: 2; }
+  .done .card { text-align: center; padding: 34px 18px; }
+  .done .tick {
+    width: 64px; height: 64px; margin: 0 auto; border-radius: 50%;
+    background: var(--navy-700); color: var(--yellow);
+    display: grid; place-items: center; font-size: 32px; font-weight: 800;
   }
-  .done .tick { font-size: 64px; }
-  .done h2 { margin: 10px 0 4px; }
-  pre { text-align: left; background: #fff; padding: 12px; border-radius: 12px; font-size: 12px; overflow: auto; }
+  .done h2 { justify-content: center; margin: 12px 0 4px; }
+  pre { text-align: left; background: #f4f6fb; padding: 12px; border-radius: 12px; font-size: 12px; overflow: auto; }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>መልእክተኛው delivery</h1>
-  <p>ASTU Student Delivery · የማድረስ አገልግሎት</p>
+<header class="hero">
+  <img class="hero-photo" src="images/rider.jpg" alt="" onerror="this.style.display='none'">
+  <div class="brand">
+    <div class="logo"><img src="images/logo.jpg" alt="" onerror="this.style.display='none'"></div>
+    <div>
+      <h1>መልእክተኛው <span>delivery</span></h1>
+      <p>ASTU Student Delivery · የማድረስ አገልግሎት</p>
+    </div>
+  </div>
+  <div class="hero-tag">You need it,<br><em>we bring it.</em></div>
 </header>
 
 <form id="orderForm" novalidate>
 
-  <!-- 1. Pickup -->
-  <div class="card">
-    <h2>📍 Where should we bring it from? <br><small style="font-weight:400;color:var(--muted)">ከየት እንምጣ?</small></h2>
-    <div class="chips three">
-      <label class="chip"><input type="radio" name="pickup" value="Bole" required><span><em>🏪</em>Bole</span></label>
-      <label class="chip"><input type="radio" name="pickup" value="Geda"><span><em>🏪</em>Geda</span></label>
-      <label class="chip"><input type="radio" name="pickup" value="Other"><span><em>✏️</em>Other</span></label>
+  <!-- STEP 1: category -->
+  <section class="card" id="s1">
+    <h2><span class="num">1</span><div>What do you need?<small>ምን ይፈልጋሉ?</small></div></h2>
+    <div class="tiles">
+      <label class="tile t-food"><input type="radio" name="category" value="Food"><span><img class="pic" src="images/food.jpg" alt=""><b>Food<small>ምግብ</small></b></span></label>
+      <label class="tile t-med"><input type="radio" name="category" value="Medicine"><span><img class="pic" src="images/medicine.jpg" alt=""><b>Medicine<small>መድኃኒት</small></b></span></label>
+      <label class="tile t-jar"><input type="radio" name="category" value="Jar Water"><span><img class="pic" src="images/jar.jpg" alt=""><b>Jar Water<small>የጃር ውሃ</small></b></span></label>
+      <label class="tile t-other"><input type="radio" name="category" value="Other"><span><img class="pic" src="images/other.jpg" alt=""><b>Other<small>ሌላ</small></b></span></label>
     </div>
-    <div class="reveal" id="pickupOtherWrap">
-      <label class="field" for="pickupOther">Write the place <small>(ቦታውን ይጻፉ)</small></label>
-      <input type="text" id="pickupOther" placeholder="e.g. Mercato Shop, Kebele 05 ...">
-      <div class="err" id="pickupOtherErr">Please write the pickup place.</div>
+    <div class="err" id="categoryErr">Please choose what you need.</div>
+  </section>
+
+  <!-- STEP 2A: food / medicine / other -->
+  <section class="card step" id="stepGeneral">
+    <h2><span class="num">2</span><div>Order details<small>የትዕዛዝ ዝርዝር</small></div></h2>
+
+    <div class="field">
+      <label>Where should we bring it from? <small>(ከየት እንምጣ?)</small></label>
+      <div class="chips">
+        <label class="chip"><input type="radio" name="pickup" value="Bole"><span>Bole</span></label>
+        <label class="chip"><input type="radio" name="pickup" value="Geda"><span>Geda</span></label>
+        <label class="chip"><input type="radio" name="pickup" value="Other"><span>Other</span></label>
+      </div>
+      <div class="reveal" id="pickupOtherWrap">
+        <input class="input" type="text" id="pickupOther" placeholder="Write the area / የቦታውን ስም ይጻፉ">
+        <div class="err" id="pickupOtherErr">Please write the area.</div>
+      </div>
+      <div class="err" id="pickupErr">Please choose where to bring it from.</div>
     </div>
-    <div class="err" id="pickupErr">Please choose a pickup place.</div>
-  </div>
 
-  <!-- 2. Material type -->
-  <div class="card">
-    <h2>📦 What do you need? <br><small style="font-weight:400;color:var(--muted)">ምን ይፈልጋሉ?</small></h2>
-    <div class="chips">
-      <label class="chip"><input type="radio" name="category" value="Food" required><span><em>🍽️</em>Food · ምግብ</span></label>
-      <label class="chip"><input type="radio" name="category" value="Medicine"><span><em>💊</em>Medicine · መድኃኒት</span></label>
-      <label class="chip"><input type="radio" name="category" value="Jar Water"><span><em>💧</em>Jar Water · የጃር ውሃ</span></label>
-      <label class="chip"><input type="radio" name="category" value="Other"><span><em>🛒</em>Other · ሌላ</span></label>
+    <div class="field">
+      <label for="place">Specific place <small>(የተወሰነ ቦታ)</small></label>
+      <input class="input" type="text" id="place" placeholder="e.g. Mamie Shero, Bonale Burger" autocomplete="off">
+      <div class="err" id="placeErr">Please write the shop or restaurant name.</div>
     </div>
-    <div class="reveal" id="categoryOtherWrap">
-      <label class="field" for="categoryOther">What kind of item? <small>(ዓይነቱን ይጻፉ)</small></label>
-      <input type="text" id="categoryOther" placeholder="e.g. Stationery, Toiletries ...">
-      <div class="err" id="categoryOtherErr">Please write the type of item.</div>
+
+    <div class="field">
+      <label for="item" id="itemLabel">Name of the material <small>(የዕቃው ስም)</small></label>
+      <input class="input" type="text" id="item" placeholder="e.g. Shiro with injera" autocomplete="off">
+      <div class="err" id="itemErr">Please write the name of the material.</div>
     </div>
-    <div class="err" id="categoryErr">Please choose a type.</div>
 
-    <label class="field" for="itemName" style="margin-top:16px">Name of the material <small>(የዕቃው ስም)</small></label>
-    <input type="text" id="itemName" placeholder="e.g. Shiro with injera, Paracetamol, Notebook">
-    <div class="err" id="itemNameErr">Please write the name of the material.</div>
-
-    <label class="field" for="quantity">How much / how many? <small>(ምን ያህል?)</small></label>
-    <div class="stepper">
-      <button type="button" id="minus" aria-label="decrease">−</button>
-      <input type="number" id="quantity" value="1" min="1" inputmode="numeric">
-      <button type="button" id="plus" aria-label="increase">+</button>
+    <div class="field">
+      <label>How much / how many? <small>(ምን ያህል?)</small></label>
+      <div class="stepper">
+        <button type="button" data-step="-1" data-target="quantity" aria-label="less">−</button>
+        <input class="input" type="number" id="quantity" value="1" min="1" inputmode="numeric">
+        <button type="button" data-step="1" data-target="quantity" aria-label="more">+</button>
+      </div>
+      <div class="err" id="quantityErr">Quantity must be at least 1.</div>
     </div>
-    <div class="err" id="quantityErr">Quantity must be at least 1.</div>
-  </div>
+  </section>
 
-  <!-- 3. Delivery details -->
-  <div class="card">
-    <h2>🏠 Delivery details <br><small style="font-weight:400;color:var(--muted)">የሚደርስበት</small></h2>
+  <!-- STEP 2B: jar water -->
+  <section class="card step" id="stepJar">
+    <h2><span class="num">2</span><div>Choose jar size<small>የጃር መጠን ይምረጡ</small></div></h2>
+    <div class="sizes">
+      <label class="size"><input type="radio" name="jar" value="10"><span><img class="jarpic" src="images/jar.jpg" alt=""><i class="lit">10 <small>Liter</small></i><i class="pr" data-price="10"></i></span></label>
+      <label class="size"><input type="radio" name="jar" value="20"><span><img class="jarpic" src="images/jar.jpg" alt=""><i class="lit">20 <small>Liter</small></i><i class="pr" data-price="20"></i></span></label>
+    </div>
+    <div class="err" id="jarErr">Please choose 10 or 20 liter.</div>
 
-    <label class="field" for="phone">Phone number <small>(ስልክ ቁጥር)</small></label>
-    <input type="tel" id="phone" placeholder="09XXXXXXXX" inputmode="tel" maxlength="13">
-    <div class="err" id="phoneErr">Enter a valid phone number, e.g. 0912345678.</div>
+    <div class="field" style="margin-top:16px">
+      <label>How many jars? <small>(ስንት ጃር?)</small></label>
+      <div class="stepper">
+        <button type="button" data-step="-1" data-target="jarCount" aria-label="less">−</button>
+        <input class="input" type="number" id="jarCount" value="1" min="1" inputmode="numeric">
+        <button type="button" data-step="1" data-target="jarCount" aria-label="more">+</button>
+      </div>
+      <div class="err" id="jarCountErr">Number of jars must be at least 1.</div>
+    </div>
 
-    <div class="row">
+    <div class="total"><span>Total · ጠቅላላ</span><b id="jarTotal">—</b></div>
+  </section>
+
+  <!-- STEP 3: delivery -->
+  <section class="card step" id="stepDeliver">
+    <h2><span class="num">3</span><div>Delivery details<small>የሚደርስበት</small></div></h2>
+
+    <div class="field">
+      <label for="name">Your name <small>(ስምዎ)</small></label>
+      <input class="input" type="text" id="name" placeholder="Full name" autocomplete="name">
+      <div class="err" id="nameErr">Please write your name.</div>
+    </div>
+
+    <div class="field">
+      <label for="phone">Phone number <small>(ስልክ ቁጥር)</small></label>
+      <input class="input" type="tel" id="phone" placeholder="09XXXXXXXX" inputmode="tel" maxlength="14" autocomplete="tel">
+      <div class="err" id="phoneErr">Enter a valid phone number, e.g. 0912345678.</div>
+    </div>
+
+    <div class="row field">
       <div>
-        <label class="field" for="block">Building block <small>(ብሎክ)</small></label>
-        <input type="text" id="block" placeholder="e.g. 45">
+        <label for="block">Building block <small>(ብሎክ)</small></label>
+        <input class="input" type="text" id="block" placeholder="e.g. 45">
         <div class="err" id="blockErr">Required.</div>
       </div>
       <div>
-        <label class="field" for="dorm">Dorm number <small>(ዶርም)</small></label>
-        <input type="text" id="dorm" placeholder="e.g. 212">
+        <label for="dorm">Dorm number <small>(ዶርም)</small></label>
+        <input class="input" type="text" id="dorm" placeholder="e.g. 212">
         <div class="err" id="dormErr">Required.</div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- Only shown when opened outside Telegram (for testing) -->
   <button type="submit" class="submit">Send Order · ትዕዛዝ ላክ</button>
+  <p class="foot">Your comfort is our priority · ምቾታችሁ ቀዳሚ ተግባራችን ነው</p>
 </form>
 
 <div class="done" id="done">
-  <div class="tick">✅</div>
-  <h2>Order ready!</h2>
-  <p>(Test mode — opened outside Telegram)</p>
-  <pre id="dump"></pre>
+  <div class="card">
+    <div class="tick">✓</div>
+    <h2>Order ready!</h2>
+    <p style="color:var(--muted);font-size:13px">Test mode — opened outside Telegram</p>
+    <pre id="dump"></pre>
+  </div>
 </div>
 
 <script>
 (function () {
+  /* =====================================================
+     EDIT JAR PRICES HERE (in Birr)
+     ===================================================== */
+  const JAR_PRICES = { 10: 30, 20: 50 };
+  const CURRENCY = 'Birr';
+
   const tg = window.Telegram && window.Telegram.WebApp;
   const insideTelegram = !!(tg && (tg.initData || (tg.platform && tg.platform !== 'unknown')));
 
-  if (tg) { tg.ready(); tg.expand(); }
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    try { tg.setHeaderColor('#0b1530'); tg.setBackgroundColor('#f3f5fb'); } catch (e) {}
+  }
   if (!insideTelegram) document.body.classList.add('no-telegram');
 
   const $ = (id) => document.getElementById(id);
   const form = $('orderForm');
-
-  /* ---------- show/hide "Other" fields ---------- */
-  function radioValue(name) {
+  const radio = (name) => {
     const r = form.querySelector('input[name="' + name + '"]:checked');
     return r ? r.value : '';
-  }
-  form.addEventListener('change', (e) => {
-    if (e.target.name === 'pickup') {
-      $('pickupOtherWrap').classList.toggle('show', e.target.value === 'Other');
-      $('pickupErr').classList.remove('show');
-    }
-    if (e.target.name === 'category') {
-      $('categoryOtherWrap').classList.toggle('show', e.target.value === 'Other');
-      $('categoryErr').classList.remove('show');
-    }
+  };
+  const haptic = () => { try { tg.HapticFeedback.selectionChanged(); } catch (e) {} };
+
+  /* prefill name from Telegram */
+  try {
+    const u = tg.initDataUnsafe.user;
+    if (u) $('name').value = [u.first_name, u.last_name].filter(Boolean).join(' ');
+  } catch (e) {}
+
+  /* show jar prices on the size tiles */
+  document.querySelectorAll('[data-price]').forEach((el) => {
+    el.textContent = JAR_PRICES[el.dataset.price] + ' ' + CURRENCY;
   });
 
-  /* ---------- quantity stepper ---------- */
-  const qty = $('quantity');
-  $('minus').onclick = () => { qty.value = Math.max(1, (parseInt(qty.value) || 1) - 1); };
-  $('plus').onclick  = () => { qty.value = (parseInt(qty.value) || 0) + 1; };
+  /* ---------- flow ---------- */
+  function show(id, on) { $(id).classList.toggle('show', on); }
+
+  function applyCategory(cat) {
+    const jar = cat === 'Jar Water';
+    show('stepGeneral', !jar);
+    show('stepJar', jar);
+    show('stepDeliver', true);
+    $('categoryErr').classList.remove('show');
+
+    const labels = {
+      'Food':     ['Name of the food <small>(የምግቡ ስም)</small>', 'e.g. Shiro with injera'],
+      'Medicine': ['Name of the medicine <small>(የመድኃኒቱ ስም)</small>', 'e.g. Paracetamol 500mg'],
+      'Other':    ['Name of the material <small>(የዕቃው ስም)</small>', 'e.g. Notebook, pen, soap']
+    };
+    if (!jar) {
+      $('itemLabel').innerHTML = labels[cat][0];
+      $('item').placeholder = labels[cat][1];
+    }
+    updateMainButton();
+  }
+
+  form.addEventListener('change', (e) => {
+    const n = e.target.name;
+    if (n === 'category') { applyCategory(e.target.value); haptic(); }
+    if (n === 'pickup') {
+      show('pickupOtherWrap', e.target.value === 'Other');
+      $('pickupErr').classList.remove('show');
+      haptic();
+    }
+    if (n === 'jar') { $('jarErr').classList.remove('show'); updateJarTotal(); haptic(); }
+  });
+
+  /* ---------- steppers ---------- */
+  document.querySelectorAll('.stepper button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const t = $(b.dataset.target);
+      t.value = Math.max(1, (parseInt(t.value, 10) || 1) + parseInt(b.dataset.step, 10));
+      if (b.dataset.target === 'jarCount') updateJarTotal();
+      haptic();
+    });
+  });
+  $('jarCount').addEventListener('input', updateJarTotal);
+
+  function jarTotal() {
+    const size = radio('jar');
+    const count = parseInt($('jarCount').value, 10) || 0;
+    return size && count > 0 ? JAR_PRICES[size] * count : 0;
+  }
+  function updateJarTotal() {
+    const t = jarTotal();
+    $('jarTotal').textContent = t ? t + ' ' + CURRENCY : '—';
+    updateMainButton();
+  }
 
   /* ---------- helpers ---------- */
   function normalizePhone(raw) {
@@ -243,93 +456,112 @@
     return /^0[79]\d{8}$/.test(p) ? p : null;
   }
   function flag(inputId, errId, bad) {
-    const el = $(inputId), er = $(errId);
+    const el = $(inputId);
     if (el) el.classList.toggle('invalid', bad);
-    er.classList.toggle('show', bad);
+    $(errId).classList.toggle('show', bad);
     return bad;
   }
 
   /* ---------- validate + collect ---------- */
   function collect() {
     let bad = false;
-    const pickup = radioValue('pickup');
-    const category = radioValue('category');
-
-    $('pickupErr').classList.toggle('show', !pickup);
-    bad = bad || !pickup;
+    const category = radio('category');
     $('categoryErr').classList.toggle('show', !category);
-    bad = bad || !category;
+    if (!category) return null;
 
-    const pickupOther = $('pickupOther').value.trim();
-    const categoryOther = $('categoryOther').value.trim();
-    if (pickup === 'Other') bad = flag('pickupOther', 'pickupOtherErr', !pickupOther) || bad;
-    if (category === 'Other') bad = flag('categoryOther', 'categoryOtherErr', !categoryOther) || bad;
+    const isJar = category === 'Jar Water';
+    const data = { category: category };
 
-    const itemName = $('itemName').value.trim();
-    bad = flag('itemName', 'itemNameErr', !itemName) || bad;
+    if (isJar) {
+      const size = radio('jar');
+      const count = parseInt($('jarCount').value, 10);
+      $('jarErr').classList.toggle('show', !size);
+      bad = !size || bad;
+      bad = flag('jarCount', 'jarCountErr', !(count >= 1)) || bad;
+      if (size && count >= 1) {
+        data.jar = {
+          liters: parseInt(size, 10),
+          price: JAR_PRICES[size],
+          count: count,
+          total: JAR_PRICES[size] * count
+        };
+      }
+    } else {
+      const pickup = radio('pickup');
+      const pickupOther = $('pickupOther').value.trim();
+      const place = $('place').value.trim();
+      const item = $('item').value.trim();
+      const quantity = parseInt($('quantity').value, 10);
 
-    const quantity = parseInt(qty.value, 10);
-    bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
+      $('pickupErr').classList.toggle('show', !pickup);
+      bad = !pickup || bad;
+      if (pickup === 'Other') bad = flag('pickupOther', 'pickupOtherErr', !pickupOther) || bad;
+      bad = flag('place', 'placeErr', !place) || bad;
+      bad = flag('item', 'itemErr', !item) || bad;
+      bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
 
+      data.pickup = pickup === 'Other' ? pickupOther : pickup;
+      data.place = place;
+      data.item = item;
+      data.quantity = quantity;
+    }
+
+    const name = $('name').value.trim();
     const phone = normalizePhone($('phone').value);
-    bad = flag('phone', 'phoneErr', !phone) || bad;
-
     const block = $('block').value.trim();
     const dorm = $('dorm').value.trim();
+    bad = flag('name', 'nameErr', !name) || bad;
+    bad = flag('phone', 'phoneErr', !phone) || bad;
     bad = flag('block', 'blockErr', !block) || bad;
     bad = flag('dorm', 'dormErr', !dorm) || bad;
 
     if (bad) return null;
 
-    return {
-      pickup: pickup === 'Other' ? pickupOther : pickup,
-      category: category === 'Other' ? categoryOther : category,
-      item: itemName,
-      quantity: quantity,
-      phone: phone,
-      block: block,
-      dorm: dorm,
-      user: tg && tg.initDataUnsafe && tg.initDataUnsafe.user
-        ? {
-            id: tg.initDataUnsafe.user.id,
-            name: [tg.initDataUnsafe.user.first_name, tg.initDataUnsafe.user.last_name].filter(Boolean).join(' '),
-            username: tg.initDataUnsafe.user.username || null
-          }
-        : null,
-      createdAt: new Date().toISOString()
-    };
+    data.name = name;
+    data.phone = phone;
+    data.block = block;
+    data.dorm = dorm;
+    data.user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user)
+      ? { id: tg.initDataUnsafe.user.id, username: tg.initDataUnsafe.user.username || null }
+      : null;
+    data.createdAt = new Date().toISOString();
+    return data;
   }
 
   function submit() {
     const data = collect();
     if (!data) {
-      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-      const firstErr = document.querySelector('.err.show');
-      if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      try { tg.HapticFeedback.notificationOccurred('error'); } catch (e) {}
+      const first = document.querySelector('.err.show');
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (insideTelegram) {
-      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-      tg.sendData(JSON.stringify(data));   // closes the Mini App and sends data to the bot
+      try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+      tg.sendData(JSON.stringify(data));
     } else {
       form.style.display = 'none';
       $('done').style.display = 'block';
       $('dump').textContent = JSON.stringify(data, null, 2);
+      window.scrollTo(0, 0);
     }
   }
-
   form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
 
   /* ---------- Telegram main button ---------- */
-  if (insideTelegram) {
+  function updateMainButton() {
+    if (!insideTelegram) return;
+    const cat = radio('category');
+    if (!cat) { tg.MainButton.hide(); return; }
+    const t = cat === 'Jar Water' ? jarTotal() : 0;
     tg.MainButton.setParams({
-      text: 'SEND ORDER · ትዕዛዝ ላክ',
+      text: t ? 'SEND ORDER · ' + t + ' ' + CURRENCY : 'SEND ORDER · ትዕዛዝ ላክ',
       color: '#14213d',
-      text_color: '#ffd60a'
+      text_color: '#ffd60a',
+      is_visible: true
     });
-    tg.MainButton.show();
-    tg.MainButton.onClick(submit);
   }
+  if (insideTelegram) tg.MainButton.onClick(submit);
 })();
 </script>
 </body>
