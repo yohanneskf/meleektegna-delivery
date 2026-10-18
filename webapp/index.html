@@ -186,7 +186,7 @@
     justify-content: space-between; align-items: center; gap: 12px; }
   .fee.show { display: flex; animation: rise .3s ease; }
   .fee small { font-weight: 500; color: var(--muted); }
-  .fee b { font-size: 20px; font-weight: 800; }
+  .fee b { font-size: 20px; font-weight: 800; white-space: nowrap; }
   .fee em { font-style: normal; font-size: 13px; text-align: right; line-height: 1.3; }
   .fee.tbc { background: #eef1f9; }
   .total {
@@ -205,6 +205,21 @@
   }
   .stepper button:active { transform: scale(.92); }
   .stepper .input { text-align: center; font-weight: 700; font-size: 18px; }
+
+  /* ---------- MEDICINE LIST ---------- */
+  .medrow { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .medrow .med-name { flex: 1; min-width: 0; }
+  .medrow .med-qty { flex: none; width: 66px; text-align: center; font-weight: 700; padding-left: 6px; padding-right: 6px; }
+  .medrow .rm {
+    flex: none; width: 40px; height: 48px; border: none; border-radius: 12px;
+    background: #fdecec; color: var(--error); font-size: 22px; font-weight: 700; cursor: pointer;
+  }
+  .addmed {
+    display: block; width: 100%; padding: 13px; border: 2px dashed var(--navy-500); border-radius: 14px;
+    background: transparent; color: var(--navy-700); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .addmed small { font-weight: 500; color: var(--muted); }
+  .addmed:active { background: #eef1f9; }
 
   /* ---------- BUTTONS / FOOTER ---------- */
   .submit {
@@ -273,19 +288,26 @@
       <div class="err" id="pickupErr">Please choose where to bring it from.</div>
     </div>
 
-    <div class="field">
+    <div class="field" id="placeField">
       <label for="place">Specific place <small>(የተወሰነ ቦታ)</small></label>
       <input class="input" type="text" id="place" placeholder="e.g. Mamie Shero, Bonale Burger" autocomplete="off">
       <div class="err" id="placeErr">Please write the shop or restaurant name.</div>
     </div>
 
-    <div class="field">
+    <div class="field" id="itemField">
       <label for="item" id="itemLabel">Name of the material <small>(የዕቃው ስም)</small></label>
       <input class="input" type="text" id="item" placeholder="e.g. Shiro with injera" autocomplete="off">
       <div class="err" id="itemErr">Please write the name of the material.</div>
     </div>
 
-    <div class="field">
+    <div class="field" id="medField" hidden>
+      <label>Medicines <small>(መድኃኒቶች · name and how many)</small></label>
+      <div id="medList"></div>
+      <button type="button" class="addmed" id="addMed">+ Add another medicine <small>(ሌላ መድኃኒት ጨምር)</small></button>
+      <div class="err" id="medErr">Please write the name of at least one medicine.</div>
+    </div>
+
+    <div class="field" id="qtyField">
       <label>How much / how many? <small>(ምን ያህል?)</small></label>
       <div class="stepper">
         <button type="button" data-step="-1" data-target="quantity" aria-label="less">−</button>
@@ -375,7 +397,8 @@
   const JAR_LITERS = 20;
   const JAR_PRICE = 250;
   const DELIVERY_FEES = { 'Bole': 50, 'Geda': 60 };   // any other place: you contact the student
-  const FEE_CATEGORIES = ['Food', 'Medicine'];       // categories that get a fixed delivery fee
+  const FEE_CATEGORIES = ['Food', 'Medicine'];       // categories that get a delivery fee
+  const FEE_PER_ITEM = ['Food'];                     // fee x quantity (Medicine = one fixed fee, however many)
   const CURRENCY = 'Birr';
 
   /* Your bot's server on Render + "/order" (used when the form is opened
@@ -414,10 +437,14 @@
     const cat = radio('category');
     const pickup = radio('pickup');
     if (!cat || cat === 'Jar Water' || !pickup) { box.className = 'fee'; return; }
-    const fee = FEE_CATEGORIES.indexOf(cat) >= 0 ? DELIVERY_FEES[pickup] : undefined;
-    if (fee) {
+    const each = FEE_CATEGORIES.indexOf(cat) >= 0 ? DELIVERY_FEES[pickup] : undefined;
+    if (each) {
+      const qty = FEE_PER_ITEM.indexOf(cat) >= 0 ? Math.max(1, parseInt($('quantity').value, 10) || 1) : 1;
+      let note = '';
+      if (qty > 1) note = '<br><small>' + each + ' × ' + qty + '</small>';
+      else if (cat === 'Medicine') note = '<br><small>one fee for all medicines</small>';
       box.className = 'fee show';
-      box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small></span><b>' + fee + ' ' + CURRENCY + '</b>';
+      box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small>' + note + '</span><b>' + (each * qty) + ' ' + CURRENCY + '</b>';
     } else {
       box.className = 'fee show tbc';
       box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small></span>' +
@@ -434,6 +461,13 @@
     show('stepJar', jar);
     show('stepDeliver', true);
     $('categoryErr').classList.remove('show');
+
+    /* Medicine: no "specific place", and a list of medicines instead of one item + quantity */
+    const med = cat === 'Medicine';
+    $('placeField').hidden = med;
+    $('itemField').hidden = med;
+    $('qtyField').hidden = med;
+    $('medField').hidden = !med;
 
     const labels = {
       'Food':     ['Name of the food <small>(የምግቡ ስም)</small>', 'e.g. Shiro with injera'],
@@ -465,10 +499,36 @@
       const t = $(b.dataset.target);
       t.value = Math.max(1, (parseInt(t.value, 10) || 1) + parseInt(b.dataset.step, 10));
       if (b.dataset.target === 'jarCount') updateJarTotal();
+      if (b.dataset.target === 'quantity') updateFee();
       haptic();
     });
   });
   $('jarCount').addEventListener('input', updateJarTotal);
+  $('quantity').addEventListener('input', updateFee);
+
+  /* ---------- medicine list ---------- */
+  const MAX_MEDS = 10;
+  const medRows = () => $('medList').querySelectorAll('.medrow');
+  function refreshMeds() {
+    const rows = medRows();
+    rows.forEach((r) => { r.querySelector('.rm').style.visibility = rows.length > 1 ? 'visible' : 'hidden'; });
+    $('addMed').style.display = rows.length >= MAX_MEDS ? 'none' : '';
+  }
+  function addMedRow(focus) {
+    if (medRows().length >= MAX_MEDS) return;
+    const row = document.createElement('div');
+    row.className = 'medrow';
+    row.innerHTML =
+      '<input class="input med-name" type="text" placeholder="Medicine" maxlength="100" autocomplete="off">' +
+      '<input class="input med-qty" type="number" value="1" min="1" max="99" inputmode="numeric" aria-label="How many">' +
+      '<button type="button" class="rm" aria-label="Remove this medicine">×</button>';
+    row.querySelector('.rm').addEventListener('click', () => { row.remove(); refreshMeds(); haptic(); });
+    $('medList').appendChild(row);
+    refreshMeds();
+    if (focus) row.querySelector('.med-name').focus();
+  }
+  $('addMed').addEventListener('click', () => { $('medErr').classList.remove('show'); addMedRow(true); haptic(); });
+  addMedRow(false);
 
   function jarTotal() {
     const count = parseInt($('jarCount').value, 10) || 0;
@@ -513,21 +573,37 @@
     } else {
       const pickup = radio('pickup');
       const pickupOther = $('pickupOther').value.trim();
-      const place = $('place').value.trim();
-      const item = $('item').value.trim();
-      const quantity = parseInt($('quantity').value, 10);
 
       $('pickupErr').classList.toggle('show', !pickup);
       bad = !pickup || bad;
       if (pickup === 'Other') bad = flag('pickupOther', 'pickupOtherErr', !pickupOther) || bad;
-      bad = flag('place', 'placeErr', !place) || bad;
-      bad = flag('item', 'itemErr', !item) || bad;
-      bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
-
       data.pickup = pickup === 'Other' ? pickupOther : pickup;
-      data.place = place;
-      data.item = item;
-      data.quantity = quantity;
+      data.pickupChoice = pickup;
+
+      if (category === 'Medicine') {
+        const items = [];
+        medRows().forEach((r) => {
+          const n = r.querySelector('.med-name'), q = r.querySelector('.med-qty');
+          const nm = n.value.trim(), qty = parseInt(q.value, 10);
+          n.classList.remove('invalid'); q.classList.remove('invalid');
+          if (!nm) return;                       // blank rows are ignored
+          if (!(qty >= 1)) { q.classList.add('invalid'); bad = true; return; }
+          items.push({ name: nm, quantity: qty });
+        });
+        $('medErr').classList.toggle('show', !items.length);
+        if (!items.length) { bad = true; medRows()[0].querySelector('.med-name').classList.add('invalid'); }
+        data.items = items;
+      } else {
+        const place = $('place').value.trim();
+        const item = $('item').value.trim();
+        const quantity = parseInt($('quantity').value, 10);
+        bad = flag('place', 'placeErr', !place) || bad;
+        bad = flag('item', 'itemErr', !item) || bad;
+        bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
+        data.place = place;
+        data.item = item;
+        data.quantity = quantity;
+      }
     }
 
     const name = $('name').value.trim();

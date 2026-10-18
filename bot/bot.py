@@ -70,7 +70,9 @@ CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Ot
 JAR_LITERS = 20
 JAR_PRICE = 250
 DELIVERY_FEES = {"bole": 50, "geda": 60}      # any other place -> you contact the student
-FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a fixed delivery fee
+FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a delivery fee
+FEE_PER_ITEM = {"Food"}                       # fee x quantity (Medicine = one fixed fee, however many)
+MAX_MEDICINES = 10
 
 
 def e(value) -> str:
@@ -104,19 +106,41 @@ def parse_order(d: dict) -> dict:
             # only 20 L jars, at our price (ignore any size/price sent by the form)
             o.update(liters=JAR_LITERS, price=JAR_PRICE, count=count, total=JAR_PRICE * count)
         else:
-            o.update(
-                pickup=str(d["pickup"]).strip()[:80],
-                place=str(d["place"]).strip()[:100],
-                item=str(d["item"]).strip()[:200],
-                quantity=int(d["quantity"]),
-            )
-            if not (o["pickup"] and o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
-                raise ValueError("bad order values")
-            # fixed fee for Food / Medicine from Bole or Geda, otherwise None (you contact them)
-            o["fee"] = (
-                DELIVERY_FEES.get(o["pickup"].strip().lower())
-                if category in FEE_CATEGORIES else None
-            )
+            pickup = str(d["pickup"]).strip()[:80]
+            if not pickup:
+                raise ValueError("no pickup place")
+            o["pickup"] = pickup
+
+            # Fee: only when the student tapped Bole / Geda (not the "Other" box)
+            choice = str(d.get("pickupChoice") or "").strip().lower()
+            key = None if choice == "other" else pickup.lower()
+            each = DELIVERY_FEES.get(key) if (key and category in FEE_CATEGORIES) else None
+
+            if category == "Medicine":
+                raw = d.get("items")
+                if not raw and d.get("item"):  # older cached form: one medicine only
+                    raw = [{"name": d["item"], "quantity": d.get("quantity", 1)}]
+                items = []
+                for it in list(raw or [])[:MAX_MEDICINES]:
+                    nm, qty = str(it["name"]).strip()[:100], int(it["quantity"])
+                    if not nm or not 1 <= qty <= 99:
+                        raise ValueError("bad medicine")
+                    items.append({"name": nm, "quantity": qty})
+                if not items:
+                    raise ValueError("no medicine")
+                o["items"] = items
+                fee = each  # ONE fixed fee, however many medicines
+            else:
+                o.update(
+                    place=str(d["place"]).strip()[:100],
+                    item=str(d["item"]).strip()[:200],
+                    quantity=int(d["quantity"]),
+                )
+                if not (o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
+                    raise ValueError("bad order values")
+                fee = each * o["quantity"] if (each and category in FEE_PER_ITEM) else each
+
+            o["fee_each"], o["fee"] = each, fee
     except (KeyError, TypeError) as exc:
         raise ValueError(f"malformed order: {exc!r}") from exc
     return o
@@ -140,26 +164,43 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
             f"💧 Jar Water {o['liters']}L × {o['count']}\n💰 Total: {o['total']} Birr"
         )
     else:
+        fee, each = o.get("fee"), o.get("fee_each")
+        if fee and each and fee != each:
+            fee_text = f"{each} × {o['quantity']} = <b>{fee} Birr</b>"
+        elif fee:
+            fee_text = f"<b>{fee} Birr</b>"
+            if category == "Medicine" and len(o["items"]) > 1:
+                fee_text += " (one fee for all medicines)"
+        else:
+            fee_text = None
+        admin_fee = f"🚚 <b>Delivery fee:</b> {fee_text}" if fee_text else \
+            "🚚 <b>Delivery fee:</b> ⚠️ not set – contact the student"
+        student_fee = f"🚚 Delivery fee: {fee_text.replace('<b>', '').replace('</b>', '')}" if fee_text else \
+            "🚚 Delivery fee: we'll call you to confirm it"
+
+        if category == "Medicine":
+            what = "💊 <b>Medicines:</b>\n" + "\n".join(
+                f"   {i}. {e(m['name'])} × {m['quantity']}" for i, m in enumerate(o["items"], 1)
+            )
+            student_what = "\n".join(f"💊 {e(m['name'])} × {m['quantity']}" for m in o["items"])
+            place_line = ""
+            student_where = f"📍 {e(o['pickup'])}"
+        else:
+            what = (
+                f"🏪 <b>Place:</b> {e(o['place'])}\n"
+                f"📝 <b>Item:</b> {e(o['item'])}\n"
+                f"🔢 <b>Quantity:</b> {o['quantity']}"
+            )
+            student_what = f"{icon} {e(o['item'])} × {o['quantity']}"
+            student_where = f"📍 {e(o['pickup'])} · {e(o['place'])}"
+
         details = (
             f"{icon} <b>Type:</b> {e(category)}\n"
             f"📍 <b>Pick up from:</b> {e(o['pickup'])}\n"
-            f"🏪 <b>Place:</b> {e(o['place'])}\n"
-            f"📝 <b>Item:</b> {e(o['item'])}\n"
-            f"🔢 <b>Quantity:</b> {o['quantity']}\n"
-            + (
-                f"🚚 <b>Delivery fee:</b> {o['fee']} Birr"
-                if o.get("fee")
-                else "🚚 <b>Delivery fee:</b> ⚠️ not set – contact the student"
-            )
+            f"{what}\n"
+            f"{admin_fee}"
         )
-        student_summary = (
-            f"{icon} {e(o['item'])} × {o['quantity']}\n📍 {e(o['pickup'])} · {e(o['place'])}\n"
-            + (
-                f"🚚 Delivery fee: {o['fee']} Birr"
-                if o.get("fee")
-                else "🚚 Delivery fee: we'll call you to confirm it"
-            )
-        )
+        student_summary = f"{student_what}\n{student_where}\n{student_fee}"
 
     admin_text = (
         f"🆕 <b>New Order #{order_no}</b>\n"
