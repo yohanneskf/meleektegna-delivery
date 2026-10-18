@@ -63,6 +63,15 @@ MENU_BUTTON_TEXT = "Order Now"
 
 CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Other": "🛒"}
 
+# =============================================================================
+# PRICES (in Birr). The bot decides the prices; the form's numbers are ignored.
+# Change them here AND in webapp/index.html so both show the same thing.
+# =============================================================================
+JAR_LITERS = 20
+JAR_PRICE = 250
+DELIVERY_FEES = {"bole": 50, "geda": 60}      # any other place -> you contact the student
+FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a fixed delivery fee
+
 
 def e(value) -> str:
     """HTML-escape user text."""
@@ -89,11 +98,11 @@ def parse_order(d: dict) -> dict:
             raise ValueError("empty field")
 
         if category == "Jar Water":
-            jar = d["jar"]
-            liters, price, count = int(jar["liters"]), int(jar["price"]), int(jar["count"])
-            if not (liters > 0 and price > 0 and 1 <= count <= 100):
-                raise ValueError("bad jar values")
-            o.update(liters=liters, price=price, count=count, total=price * count)
+            count = int(d["jar"]["count"])
+            if not 1 <= count <= 100:
+                raise ValueError("bad jar count")
+            # only 20 L jars, at our price (ignore any size/price sent by the form)
+            o.update(liters=JAR_LITERS, price=JAR_PRICE, count=count, total=JAR_PRICE * count)
         else:
             o.update(
                 pickup=str(d["pickup"]).strip()[:80],
@@ -103,6 +112,11 @@ def parse_order(d: dict) -> dict:
             )
             if not (o["pickup"] and o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
                 raise ValueError("bad order values")
+            # fixed fee for Food / Medicine from Bole or Geda, otherwise None (you contact them)
+            o["fee"] = (
+                DELIVERY_FEES.get(o["pickup"].strip().lower())
+                if category in FEE_CATEGORIES else None
+            )
     except (KeyError, TypeError) as exc:
         raise ValueError(f"malformed order: {exc!r}") from exc
     return o
@@ -131,10 +145,20 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
             f"📍 <b>Pick up from:</b> {e(o['pickup'])}\n"
             f"🏪 <b>Place:</b> {e(o['place'])}\n"
             f"📝 <b>Item:</b> {e(o['item'])}\n"
-            f"🔢 <b>Quantity:</b> {o['quantity']}"
+            f"🔢 <b>Quantity:</b> {o['quantity']}\n"
+            + (
+                f"🚚 <b>Delivery fee:</b> {o['fee']} Birr"
+                if o.get("fee")
+                else "🚚 <b>Delivery fee:</b> ⚠️ not set – contact the student"
+            )
         )
         student_summary = (
-            f"{icon} {e(o['item'])} × {o['quantity']}\n📍 {e(o['pickup'])} · {e(o['place'])}"
+            f"{icon} {e(o['item'])} × {o['quantity']}\n📍 {e(o['pickup'])} · {e(o['place'])}\n"
+            + (
+                f"🚚 Delivery fee: {o['fee']} Birr"
+                if o.get("fee")
+                else "🚚 Delivery fee: we'll call you to confirm it"
+            )
         )
 
     admin_text = (

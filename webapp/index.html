@@ -168,22 +168,27 @@
   .reveal.show { display: block; animation: rise .3s ease; }
 
   /* ---------- JAR SIZES ---------- */
-  .sizes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .size > span {
-    display: block; padding: 7px 7px 12px; border-radius: 20px; cursor: pointer;
-    background: linear-gradient(160deg, #f0f8ff, #cfe8ff);
-    border: 2px solid transparent; text-align: center;
-    transition: all .15s;
+  .jarcard {
+    display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 20px;
+    background: linear-gradient(160deg, #ffffff, #cfe8ff);
+    border: 2px solid var(--navy-700);
+    box-shadow: 0 12px 22px -10px rgba(20,33,61,.45);
   }
-  .size .jarpic { width: 100%; height: 84px; object-fit: cover; border-radius: 14px; }
-  .size .lit { display: block; margin-top: 9px; font-size: 22px; font-weight: 800; }
-  .size .lit small { font-size: 13px; font-weight: 600; }
-  .size .pr { display: block; font-size: 14px; font-weight: 700; color: var(--navy-500); margin-top: 1px; }
-  .size input:checked + span {
-    border-color: var(--navy-700);
-    background: linear-gradient(160deg, #ffffff, #bfe0ff);
-    box-shadow: 0 12px 22px -10px rgba(20,33,61,.55);
-  }
+  .jarcard img { flex: none; width: 118px; height: 100px; object-fit: cover; border-radius: 14px; }
+  .jarcard .lit { font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .jarcard .lit small { font-size: 14px; font-weight: 600; }
+  .jarcard .pr { font-size: 20px; font-weight: 800; color: var(--navy-500); margin-top: 2px; }
+  .jarcard .each { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ---------- DELIVERY FEE ---------- */
+  .fee { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 14px;
+    background: var(--yellow-soft); font-weight: 600; font-size: 14px;
+    justify-content: space-between; align-items: center; gap: 12px; }
+  .fee.show { display: flex; animation: rise .3s ease; }
+  .fee small { font-weight: 500; color: var(--muted); }
+  .fee b { font-size: 20px; font-weight: 800; }
+  .fee em { font-style: normal; font-size: 13px; text-align: right; line-height: 1.3; }
+  .fee.tbc { background: #eef1f9; }
   .total {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: 16px; padding: 14px 16px; border-radius: 14px;
@@ -289,16 +294,21 @@
       </div>
       <div class="err" id="quantityErr">Quantity must be at least 1.</div>
     </div>
+
+    <div class="fee" id="feeBox"></div>
   </section>
 
   <!-- STEP 2B: jar water -->
   <section class="card step" id="stepJar">
-    <h2><span class="num">2</span><div>Choose jar size<small>የጃር መጠን ይምረጡ</small></div></h2>
-    <div class="sizes">
-      <label class="size"><input type="radio" name="jar" value="10"><span><img class="jarpic" src="images/jar.jpg" alt=""><i class="lit">10 <small>Liter</small></i><i class="pr" data-price="10"></i></span></label>
-      <label class="size"><input type="radio" name="jar" value="20"><span><img class="jarpic" src="images/jar.jpg" alt=""><i class="lit">20 <small>Liter</small></i><i class="pr" data-price="20"></i></span></label>
+    <h2><span class="num">2</span><div>Jar water<small>የጃር ውሃ</small></div></h2>
+    <div class="jarcard">
+      <img src="images/jar.jpg" alt="">
+      <div>
+        <div class="lit">20 <small>Liter</small></div>
+        <div class="pr" id="jarPriceText"></div>
+        <div class="each">per jar · ለአንድ ጃር</div>
+      </div>
     </div>
-    <div class="err" id="jarErr">Please choose 10 or 20 liter.</div>
 
     <div class="field" style="margin-top:16px">
       <label>How many jars? <small>(ስንት ጃር?)</small></label>
@@ -359,9 +369,13 @@
 <script>
 (function () {
   /* =====================================================
-     EDIT JAR PRICES HERE (in Birr)
+     EDIT PRICES HERE (in Birr)
+     (the bot has the same prices, change them in bot.py too)
      ===================================================== */
-  const JAR_PRICES = { 10: 30, 20: 50 };
+  const JAR_LITERS = 20;
+  const JAR_PRICE = 250;
+  const DELIVERY_FEES = { 'Bole': 50, 'Geda': 60 };   // any other place: you contact the student
+  const FEE_CATEGORIES = ['Food', 'Medicine'];       // categories that get a fixed delivery fee
   const CURRENCY = 'Birr';
 
   /* Your bot's server on Render + "/order" (used when the form is opened
@@ -392,10 +406,24 @@
     if (u) $('name').value = [u.first_name, u.last_name].filter(Boolean).join(' ');
   } catch (e) {}
 
-  /* show jar prices on the size tiles */
-  document.querySelectorAll('[data-price]').forEach((el) => {
-    el.textContent = JAR_PRICES[el.dataset.price] + ' ' + CURRENCY;
-  });
+  $('jarPriceText').textContent = JAR_PRICE + ' ' + CURRENCY;
+
+  /* ---------- delivery fee box ---------- */
+  function updateFee() {
+    const box = $('feeBox');
+    const cat = radio('category');
+    const pickup = radio('pickup');
+    if (!cat || cat === 'Jar Water' || !pickup) { box.className = 'fee'; return; }
+    const fee = FEE_CATEGORIES.indexOf(cat) >= 0 ? DELIVERY_FEES[pickup] : undefined;
+    if (fee) {
+      box.className = 'fee show';
+      box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small></span><b>' + fee + ' ' + CURRENCY + '</b>';
+    } else {
+      box.className = 'fee show tbc';
+      box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small></span>' +
+        '<em>We will contact you to confirm it<br><small>እናነጋግርዎታለን</small></em>';
+    }
+  }
 
   /* ---------- flow ---------- */
   function show(id, on) { $(id).classList.toggle('show', on); }
@@ -416,7 +444,8 @@
       $('itemLabel').innerHTML = labels[cat][0];
       $('item').placeholder = labels[cat][1];
     }
-    updateMainButton();
+    updateFee();
+    if (jar) updateJarTotal(); else updateMainButton();
   }
 
   form.addEventListener('change', (e) => {
@@ -425,9 +454,9 @@
     if (n === 'pickup') {
       show('pickupOtherWrap', e.target.value === 'Other');
       $('pickupErr').classList.remove('show');
+      updateFee();
       haptic();
     }
-    if (n === 'jar') { $('jarErr').classList.remove('show'); updateJarTotal(); haptic(); }
   });
 
   /* ---------- steppers ---------- */
@@ -442,9 +471,8 @@
   $('jarCount').addEventListener('input', updateJarTotal);
 
   function jarTotal() {
-    const size = radio('jar');
     const count = parseInt($('jarCount').value, 10) || 0;
-    return size && count > 0 ? JAR_PRICES[size] * count : 0;
+    return count > 0 ? JAR_PRICE * count : 0;
   }
   function updateJarTotal() {
     const t = jarTotal();
@@ -477,18 +505,10 @@
     const data = { category: category };
 
     if (isJar) {
-      const size = radio('jar');
       const count = parseInt($('jarCount').value, 10);
-      $('jarErr').classList.toggle('show', !size);
-      bad = !size || bad;
       bad = flag('jarCount', 'jarCountErr', !(count >= 1)) || bad;
-      if (size && count >= 1) {
-        data.jar = {
-          liters: parseInt(size, 10),
-          price: JAR_PRICES[size],
-          count: count,
-          total: JAR_PRICES[size] * count
-        };
+      if (count >= 1) {
+        data.jar = { liters: JAR_LITERS, price: JAR_PRICE, count: count, total: JAR_PRICE * count };
       }
     } else {
       const pickup = radio('pickup');
