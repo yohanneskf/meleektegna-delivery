@@ -71,8 +71,10 @@ JAR_LITERS = 20
 JAR_PRICE = 250
 DELIVERY_FEES = {"bole": 50, "geda": 60}      # any other place -> you contact the student
 FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a delivery fee
-FEE_PER_ITEM = {"Food"}                       # fee x quantity (Medicine = one fixed fee, however many)
-MAX_MEDICINES = 10
+EXTRA_ITEM_FEE = 20                           # Food only: each additional food adds this
+                                              # (3 foods from Geda = 60 + 20 + 20 = 100)
+                                              # Medicine = one fixed fee, however many
+MAX_ITEMS = 10
 
 
 def e(value) -> str:
@@ -116,21 +118,40 @@ def parse_order(d: dict) -> dict:
             key = None if choice == "other" else pickup.lower()
             each = DELIVERY_FEES.get(key) if (key and category in FEE_CATEGORIES) else None
 
-            if category == "Medicine":
+            if category in ("Food", "Medicine"):
                 raw = d.get("items")
-                if not raw and d.get("item"):  # older cached form: one medicine only
+                if not raw and d.get("item"):  # older cached form: one item only
                     raw = [{"name": d["item"], "quantity": d.get("quantity", 1)}]
                 items = []
-                for it in list(raw or [])[:MAX_MEDICINES]:
+                for it in list(raw or [])[:MAX_ITEMS]:
                     nm, qty = str(it["name"]).strip()[:100], int(it["quantity"])
                     if not nm or not 1 <= qty <= 99:
-                        raise ValueError("bad medicine")
-                    items.append({"name": nm, "quantity": qty})
+                        raise ValueError("bad item")
+                    items.append({"name": nm, "quantity": qty, "place": str(it.get("place") or "").strip()[:100]})
                 if not items:
-                    raise ValueError("no medicine")
-                o["items"] = items
-                fee = each  # ONE fixed fee, however many medicines
+                    raise ValueError("no items")
+
+                if category == "Food":
+                    # ONE place for the whole order. (An older cached form put a place on every
+                    # food: accept it only if they are all the same place.)
+                    places = {m["place"].lower(): m["place"] for m in items if m["place"]}
+                    place = str(d.get("place") or "").strip()[:100]
+                    if not place and len(places) == 1:
+                        place = next(iter(places.values()))
+                    if not place:
+                        raise ValueError("food needs a place")
+                    if any(k != place.lower() for k in places):
+                        raise ValueError("foods must all come from one place")
+                    o["place"] = place
+                    o["items"] = [{"name": m["name"], "quantity": m["quantity"]} for m in items]
+                    # base fee for the first food + EXTRA_ITEM_FEE for every additional one
+                    o["portions"] = sum(m["quantity"] for m in items)
+                    fee = each + EXTRA_ITEM_FEE * (o["portions"] - 1) if each else None
+                else:
+                    o["items"] = [{"name": m["name"], "quantity": m["quantity"]} for m in items]
+                    fee = each  # Medicine: ONE fixed fee, however many medicines
             else:
+                # "Other" essentials: one item, one place, one quantity
                 o.update(
                     place=str(d["place"]).strip()[:100],
                     item=str(d["item"]).strip()[:200],
@@ -138,7 +159,7 @@ def parse_order(d: dict) -> dict:
                 )
                 if not (o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
                     raise ValueError("bad order values")
-                fee = each * o["quantity"] if (each and category in FEE_PER_ITEM) else each
+                fee = each
 
             o["fee_each"], o["fee"] = each, fee
     except (KeyError, TypeError) as exc:
@@ -165,26 +186,35 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
         )
     else:
         fee, each = o.get("fee"), o.get("fee_each")
-        if fee and each and fee != each:
-            fee_text = f"{each} × {o['quantity']} = <b>{fee} Birr</b>"
+        if fee and category == "Food" and o["portions"] > 1:
+            fee_text = f"{each} + {o['portions'] - 1} × {EXTRA_ITEM_FEE} = <b>{fee} Birr</b>"
         elif fee:
             fee_text = f"<b>{fee} Birr</b>"
             if category == "Medicine" and len(o["items"]) > 1:
                 fee_text += " (one fee for all medicines)"
         else:
             fee_text = None
-        admin_fee = f"🚚 <b>Delivery fee:</b> {fee_text}" if fee_text else \
-            "🚚 <b>Delivery fee:</b> ⚠️ not set – contact the student"
-        student_fee = f"🚚 Delivery fee: {fee_text.replace('<b>', '').replace('</b>', '')}" if fee_text else \
-            "🚚 Delivery fee: we'll call you to confirm it"
+        admin_fee = (
+            f"🚚 <b>Delivery fee:</b> {fee_text}"
+            if fee_text else "🚚 <b>Delivery fee:</b> ⚠️ not set – contact the student"
+        )
+        student_fee = (
+            "🚚 Delivery fee: " + fee_text.replace("<b>", "").replace("</b>", "")
+            if fee_text else "🚚 Delivery fee: we'll call you to confirm it"
+        )
 
         if category == "Medicine":
             what = "💊 <b>Medicines:</b>\n" + "\n".join(
                 f"   {i}. {e(m['name'])} × {m['quantity']}" for i, m in enumerate(o["items"], 1)
             )
             student_what = "\n".join(f"💊 {e(m['name'])} × {m['quantity']}" for m in o["items"])
-            place_line = ""
             student_where = f"📍 {e(o['pickup'])}"
+        elif category == "Food":
+            what = f"🏪 <b>Place:</b> {e(o['place'])}\n🍽️ <b>Foods:</b>\n" + "\n".join(
+                f"   {i}. {e(m['name'])} × {m['quantity']}" for i, m in enumerate(o["items"], 1)
+            )
+            student_what = "\n".join(f"🍽️ {e(m['name'])} × {m['quantity']}" for m in o["items"])
+            student_where = f"📍 {e(o['pickup'])} · {e(o['place'])}"
         else:
             what = (
                 f"🏪 <b>Place:</b> {e(o['place'])}\n"
