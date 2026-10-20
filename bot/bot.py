@@ -184,13 +184,12 @@ def parse_order(d: dict) -> dict:
                     o["items"] = [{"name": m["name"], "quantity": m["quantity"]} for m in items]
                     fee = each  # Medicine: ONE fixed fee, however many medicines
             else:
-                # "Other" essentials: one item, one place, one quantity
+                # "Other" essentials: one item and a quantity (no specific place)
                 o.update(
-                    place=str(d["place"]).strip()[:100],
                     item=str(d["item"]).strip()[:200],
                     quantity=int(d["quantity"]),
                 )
-                if not (o["place"] and o["item"] and 1 <= o["quantity"] <= 999):
+                if not (o["item"] and 1 <= o["quantity"] <= 999):
                     raise ValueError("bad order values")
                 fee = each
 
@@ -264,12 +263,11 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
             student_where = f"📍 {e(o['pickup'])} · {e(o['place'])}"
         else:
             what = (
-                f"🏪 <b>Place:</b> {e(o['place'])}\n"
                 f"📝 <b>Item:</b> {e(o['item'])}\n"
                 f"🔢 <b>Quantity:</b> {o['quantity']}"
             )
             student_what = f"{icon} {e(o['item'])} × {o['quantity']}"
-            student_where = f"📍 {e(o['pickup'])} · {e(o['place'])}"
+            student_where = f"📍 {e(o['pickup'])}"
 
         details = (
             f"{icon} <b>Type:</b> {e(category)}\n"

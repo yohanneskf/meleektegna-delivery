@@ -506,7 +506,7 @@
     $('foodField').hidden = !food;
     $('drinkField').hidden = !food;             // soft drinks: only with food
     $('medField').hidden = !med;
-    $('placeField').hidden = med;               // medicine has no specific place
+    $('placeField').hidden = !food;             // specific place: only for Food (Medicine and Other have none)
     $('placeHint').textContent = food ? '(የተወሰነ ቦታ · one place for all your foods)' : '(የተወሰነ ቦታ)';
     $('itemField').hidden = !classic;
     $('qtyField').hidden = !classic;
@@ -706,14 +706,11 @@
         bad = flag('place', 'placeErr', !place) || bad;
         data.place = place;
         data.items = items;
-      } else {
-        const place = $('place').value.trim();
+      } else {                                          // "Other": one item + quantity (no specific place)
         const item = $('item').value.trim();
         const quantity = parseInt($('quantity').value, 10);
-        bad = flag('place', 'placeErr', !place) || bad;
         bad = flag('item', 'itemErr', !item) || bad;
         bad = flag('quantity', 'quantityErr', !(quantity >= 1)) || bad;
-        data.place = place;
         data.item = item;
         data.quantity = quantity;
       }
