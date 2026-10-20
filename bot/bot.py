@@ -67,8 +67,12 @@ CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Ot
 # PRICES (in Birr). The bot decides the prices; the form's numbers are ignored.
 # Change them here AND in webapp/index.html so both show the same thing.
 # =============================================================================
-JAR_LITERS = 20
-JAR_PRICE = 250
+# Jar water: price of the jar + delivery fee, PER JAR.
+#   10 L = jar comes WITH its bottle          20 L = the empty bottle is REPLACED
+JAR_OPTIONS = {
+    10: {"price": 180, "fee": 50, "note": "with bottle"},
+    20: {"price": 190, "fee": 75, "note": "bottle replaced"},
+}
 DELIVERY_FEES = {"bole": 50, "geda": 60}      # any other place -> you contact the student
 FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a delivery fee
 EXTRA_ITEM_FEE = 20                           # Food only: each additional food adds this
@@ -102,11 +106,32 @@ def parse_order(d: dict) -> dict:
             raise ValueError("empty field")
 
         if category == "Jar Water":
-            count = int(d["jar"]["count"])
-            if not 1 <= count <= 100:
-                raise ValueError("bad jar count")
-            # only 20 L jars, at our price (ignore any size/price sent by the form)
-            o.update(liters=JAR_LITERS, price=JAR_PRICE, count=count, total=JAR_PRICE * count)
+            jar = d["jar"]
+            raw = jar.get("items")
+            if raw is None:                       # older cached form: 20 L jars only
+                raw = [{"liters": 20, "count": jar["count"]}]
+            lines, seen = [], set()
+            for it in raw:
+                liters, count = int(it["liters"]), int(it["count"])
+                if liters not in JAR_OPTIONS or liters in seen:
+                    raise ValueError("bad jar size")
+                seen.add(liters)
+                if count == 0:
+                    continue
+                if not 1 <= count <= 99:
+                    raise ValueError("bad jar count")
+                opt = JAR_OPTIONS[liters]         # prices come from HERE, never from the form
+                lines.append({
+                    "liters": liters, "count": count, "price": opt["price"],
+                    "fee": opt["fee"], "note": opt["note"],
+                    "jars_cost": count * opt["price"], "fee_cost": count * opt["fee"],
+                })
+            if not lines:
+                raise ValueError("no jars")
+            o["lines"] = lines
+            o["jars_total"] = sum(x["jars_cost"] for x in lines)
+            o["fee_total"] = sum(x["fee_cost"] for x in lines)
+            o["total"] = o["jars_total"] + o["fee_total"]
         else:
             pickup = str(d["pickup"]).strip()[:80]
             if not pickup:
@@ -143,6 +168,14 @@ def parse_order(d: dict) -> dict:
                     if any(k != place.lower() for k in places):
                         raise ValueError("foods must all come from one place")
                     o["place"] = place
+                    # optional soft drinks: listed for the rider, but NEVER part of the delivery fee
+                    drinks = []
+                    for it in list(d.get("drinks") or [])[:MAX_ITEMS]:
+                        dn, dq = str(it["name"]).strip()[:100], int(it["quantity"])
+                        if not dn or not 1 <= dq <= 99:
+                            raise ValueError("bad soft drink")
+                        drinks.append({"name": dn, "quantity": dq})
+                    o["drinks"] = drinks
                     o["items"] = [{"name": m["name"], "quantity": m["quantity"]} for m in items]
                     # base fee for the first food + EXTRA_ITEM_FEE for every additional one
                     o["portions"] = sum(m["quantity"] for m in items)
@@ -175,14 +208,23 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
     icon = CATEGORY_ICON.get(category, "📦")
 
     if category == "Jar Water":
+        jar_lines = "\n".join(
+            f"   🪣 {x['liters']} Liter × {x['count']} ({x['note']}) = {x['jars_cost']} Birr"
+            for x in o["lines"]
+        )
+        fee_parts = " + ".join(f"{x['count']} × {x['fee']}" for x in o["lines"])
         details = (
             f"{icon} <b>Type:</b> Jar Water\n"
-            f"🪣 <b>Size:</b> {o['liters']} Liter\n"
-            f"🔢 <b>Jars:</b> {o['count']}\n"
-            f"💰 <b>Price:</b> {o['price']} Birr each → <b>{o['total']} Birr</b>"
+            f"{jar_lines}\n"
+            f"💰 <b>Jars:</b> {o['jars_total']} Birr\n"
+            f"🚚 <b>Delivery fee:</b> {fee_parts} = <b>{o['fee_total']} Birr</b>\n"
+            f"💵 <b>Total to collect:</b> <b>{o['total']} Birr</b>"
         )
         student_summary = (
-            f"💧 Jar Water {o['liters']}L × {o['count']}\n💰 Total: {o['total']} Birr"
+            "\n".join(f"💧 {x['liters']} Liter × {x['count']} ({x['note']})" for x in o["lines"])
+            + f"\n💰 Jars: {o['jars_total']} Birr"
+            + f"\n🚚 Delivery: {o['fee_total']} Birr"
+            + f"\n💵 Total: {o['total']} Birr"
         )
     else:
         fee, each = o.get("fee"), o.get("fee_each")
@@ -214,6 +256,11 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
                 f"   {i}. {e(m['name'])} × {m['quantity']}" for i, m in enumerate(o["items"], 1)
             )
             student_what = "\n".join(f"🍽️ {e(m['name'])} × {m['quantity']}" for m in o["items"])
+            if o.get("drinks"):
+                what += "\n🥤 <b>Soft drinks (no delivery fee):</b>\n" + "\n".join(
+                    f"   {i}. {e(m['name'])} × {m['quantity']}" for i, m in enumerate(o["drinks"], 1)
+                )
+                student_what += "\n" + "\n".join(f"🥤 {e(m['name'])} × {m['quantity']}" for m in o["drinks"])
             student_where = f"📍 {e(o['pickup'])} · {e(o['place'])}"
         else:
             what = (

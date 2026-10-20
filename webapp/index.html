@@ -169,16 +169,26 @@
 
   /* ---------- JAR SIZES ---------- */
   .jarcard {
-    display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 20px;
-    background: linear-gradient(160deg, #ffffff, #cfe8ff);
-    border: 2px solid var(--navy-700);
+    display: grid; grid-template-columns: 96px 1fr; gap: 10px 12px; padding: 10px; border-radius: 20px;
+    background: linear-gradient(160deg, #ffffff, #e6f2ff);
+    border: 2px solid var(--line); margin-bottom: 10px;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .jarcard.on {
+    border-color: var(--navy-700); background: linear-gradient(160deg, #ffffff, #cfe8ff);
     box-shadow: 0 12px 22px -10px rgba(20,33,61,.45);
   }
-  .jarcard img { flex: none; width: 118px; height: 100px; object-fit: cover; border-radius: 14px; }
-  .jarcard .lit { font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .jarcard img { width: 96px; height: 96px; object-fit: cover; border-radius: 14px; }
+  .jarcard .lit { font-size: 24px; font-weight: 800; line-height: 1.1; }
   .jarcard .lit small { font-size: 14px; font-weight: 600; }
-  .jarcard .pr { font-size: 20px; font-weight: 800; color: var(--navy-500); margin-top: 2px; }
-  .jarcard .each { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .jarcard .pr { font-size: 18px; font-weight: 800; color: var(--navy-500); margin-top: 2px; }
+  .jarcard .dl { font-size: 13px; font-weight: 600; margin-top: 1px; }
+  .jarcard .dl small { font-weight: 500; color: var(--muted); }
+  .jarcard .note {
+    display: inline-block; margin-top: 7px; padding: 3px 10px; border-radius: 99px;
+    background: var(--yellow-soft); font-size: 12px; font-weight: 700;
+  }
+  .jarcard .jstep { grid-column: 1 / -1; }
 
   /* ---------- DELIVERY FEE ---------- */
   .fee { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 14px;
@@ -195,6 +205,10 @@
     background: var(--yellow-soft); font-weight: 600; font-size: 14px;
   }
   .total b { font-size: 20px; font-weight: 800; }
+  .total.jtotal { flex-direction: column; align-items: stretch; gap: 8px; }
+  .jtotal .jl { display: flex; justify-content: space-between; align-items: center; }
+  .jtotal .jl.big { padding-top: 8px; border-top: 1.5px dashed rgba(20,33,61,.2); }
+  .jtotal small { font-weight: 500; color: var(--muted); }
 
   /* ---------- STEPPER ---------- */
   .stepper { display: flex; align-items: center; gap: 10px; }
@@ -307,6 +321,12 @@
       <div class="err" id="foodErr">Please write the name of at least one food.</div>
     </div>
 
+    <div class="field" id="drinkField" hidden>
+      <label>Soft drinks <small>(ለስላሳ መጠጥ · optional · no delivery fee)</small></label>
+      <div id="drinkList"></div>
+      <button type="button" class="addmed" id="addDrink">+ Add soft drink <small>(ለስላሳ ጨምር)</small></button>
+    </div>
+
     <div class="field" id="medField" hidden>
       <label>Medicines <small>(መድኃኒቶች · name and how many)</small></label>
       <div id="medList"></div>
@@ -329,27 +349,15 @@
 
   <!-- STEP 2B: jar water -->
   <section class="card step" id="stepJar">
-    <h2><span class="num">2</span><div>Jar water<small>የጃር ውሃ</small></div></h2>
-    <div class="jarcard">
-      <img src="images/jar.jpg" alt="">
-      <div>
-        <div class="lit">20 <small>Liter</small></div>
-        <div class="pr" id="jarPriceText"></div>
-        <div class="each">per jar · ለአንድ ጃር</div>
-      </div>
-    </div>
+    <h2><span class="num">2</span><div>Choose your jars<small>ጃር ይምረጡ · you can take both sizes</small></div></h2>
+    <div id="jarCards"></div>
+    <div class="err" id="jarErr">Please choose at least one jar.</div>
 
-    <div class="field" style="margin-top:16px">
-      <label>How many jars? <small>(ስንት ጃር?)</small></label>
-      <div class="stepper">
-        <button type="button" data-step="-1" data-target="jarCount" aria-label="less">−</button>
-        <input class="input" type="number" id="jarCount" value="1" min="1" inputmode="numeric">
-        <button type="button" data-step="1" data-target="jarCount" aria-label="more">+</button>
-      </div>
-      <div class="err" id="jarCountErr">Number of jars must be at least 1.</div>
+    <div class="total jtotal">
+      <div class="jl"><span>Jars · <small>ጃሮች</small></span><span id="jarSub">—</span></div>
+      <div class="jl"><span>Delivery fee · <small>የማድረስ ክፍያ</small></span><span id="jarDel">—</span></div>
+      <div class="jl big"><span>Total · <small>ጠቅላላ</small></span><b id="jarTotal">—</b></div>
     </div>
-
-    <div class="total"><span>Total · ጠቅላላ</span><b id="jarTotal">—</b></div>
   </section>
 
   <!-- STEP 3: delivery -->
@@ -401,8 +409,11 @@
      EDIT PRICES HERE (in Birr)
      (the bot has the same prices, change them in bot.py too)
      ===================================================== */
-  const JAR_LITERS = 20;
-  const JAR_PRICE = 250;
+  /* Jar water: price of the jar + delivery fee, PER JAR */
+  const JARS = {
+    10: { price: 180, fee: 50, note: 'With bottle · ከጃሩ ጋር' },
+    20: { price: 190, fee: 75, note: 'Bottle replaced · ባዶ ጃሩ ይቀየራል' }
+  };
   const DELIVERY_FEES = { 'Bole': 50, 'Geda': 60 };   // any other place: you contact the student
   const FEE_CATEGORIES = ['Food', 'Medicine'];       // categories that get a delivery fee
   const EXTRA_FOOD_FEE = 20;                         // Food only: each additional food adds this (3 foods from Geda = 60+20+20 = 100)
@@ -437,7 +448,24 @@
     if (u) $('name').value = [u.first_name, u.last_name].filter(Boolean).join(' ');
   } catch (e) {}
 
-  $('jarPriceText').textContent = JAR_PRICE + ' ' + CURRENCY;
+  /* ---------- jar cards (drawn from the JARS prices above) ---------- */
+  $('jarCards').innerHTML = Object.keys(JARS).map((l) => {
+    const j = JARS[l];
+    return '<div class="jarcard" id="jc' + l + '">' +
+      '<img src="images/jar.jpg" alt="">' +
+      '<div>' +
+        '<div class="lit">' + l + ' <small>Liter</small></div>' +
+        '<div class="pr">' + j.price + ' ' + CURRENCY + '</div>' +
+        '<div class="dl">+ ' + j.fee + ' ' + CURRENCY + ' delivery <small>· የማድረስ ክፍያ</small></div>' +
+        '<span class="note">' + j.note + '</span>' +
+      '</div>' +
+      '<div class="jstep stepper">' +
+        '<button type="button" data-step="-1" data-target="jar' + l + '" aria-label="less">−</button>' +
+        '<input class="input" type="number" id="jar' + l + '" value="0" min="0" max="99" inputmode="numeric" aria-label="' + l + ' liter jars">' +
+        '<button type="button" data-step="1" data-target="jar' + l + '" aria-label="more">+</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 
   /* ---------- delivery fee box ---------- */
   function updateFee() {
@@ -452,6 +480,7 @@
       let note = '';
       if (foods > 1) note = '<br><small>' + each + ' + ' + (foods - 1) + ' extra × ' + EXTRA_FOOD_FEE + '</small>';
       else if (cat === 'Medicine') note = '<br><small>one fee for all medicines</small>';
+      if (cat === 'Food' && drinkCount() > 0) note += '<br><small>soft drinks: no delivery fee</small>';
       box.className = 'fee show';
       box.innerHTML = '<span>Delivery fee · <small>የማድረስ ክፍያ</small>' + note + '</span><b>' + total + ' ' + CURRENCY + '</b>';
     } else {
@@ -475,6 +504,7 @@
     const food = cat === 'Food', med = cat === 'Medicine';
     const classic = !food && !med;
     $('foodField').hidden = !food;
+    $('drinkField').hidden = !food;             // soft drinks: only with food
     $('medField').hidden = !med;
     $('placeField').hidden = med;               // medicine has no specific place
     $('placeHint').textContent = food ? '(የተወሰነ ቦታ · one place for all your foods)' : '(የተወሰነ ቦታ)';
@@ -509,25 +539,29 @@
   document.querySelectorAll('.stepper button').forEach((b) => {
     b.addEventListener('click', () => {
       const t = $(b.dataset.target);
-      t.value = Math.max(1, (parseInt(t.value, 10) || 1) + parseInt(b.dataset.step, 10));
-      if (b.dataset.target === 'jarCount') updateJarTotal();
+      const lo = t.min === '' ? 1 : parseInt(t.min, 10);
+      const hi = t.max === '' ? 999 : parseInt(t.max, 10);
+      t.value = Math.min(hi, Math.max(lo, (parseInt(t.value, 10) || lo) + parseInt(b.dataset.step, 10)));
+      if (b.dataset.target.indexOf('jar') === 0) updateJarTotal();
       if (b.dataset.target === 'quantity') updateFee();
       haptic();
     });
   });
-  $('jarCount').addEventListener('input', updateJarTotal);
+  $('jarCards').addEventListener('input', updateJarTotal);
   $('quantity').addEventListener('input', updateFee);
 
   /* ---------- item lists: Food and Medicine (add as many as you like) ---------- */
   const MAX_ROWS = 10;
   const LISTS = {
     Food:     { box: 'foodList', add: 'addFood', err: 'foodErr', ph: 'Food, e.g. Shiro' },
-    Medicine: { box: 'medList',  add: 'addMed',  err: 'medErr',  ph: 'Medicine' }
+    Medicine: { box: 'medList',  add: 'addMed',  err: 'medErr',  ph: 'Medicine' },
+    Drink:    { box: 'drinkList', add: 'addDrink', err: null,     ph: 'Soft drink, e.g. Coca-Cola', optional: true }
   };
   function listRows(kind) { return $(LISTS[kind].box).querySelectorAll('.itemrow'); }
   function refreshList(kind) {
     const rows = listRows(kind);
-    rows.forEach((r) => { r.querySelector('.rm').style.visibility = rows.length > 1 ? 'visible' : 'hidden'; });
+    const canRemoveLast = !!LISTS[kind].optional;        // drinks may be removed down to none
+    rows.forEach((r) => { r.querySelector('.rm').style.visibility = (rows.length > 1 || canRemoveLast) ? 'visible' : 'hidden'; });
     $(LISTS[kind].add).style.display = rows.length >= MAX_ROWS ? 'none' : '';
   }
   function addRow(kind, focus) {
@@ -544,6 +578,12 @@
     refreshList(kind);
     if (focus) row.querySelector('.it-name').focus();
   }
+  /* soft drinks never change the delivery fee */
+  function drinkCount() {
+    let n = 0;
+    listRows('Drink').forEach((r) => { if (r.querySelector('.it-name').value.trim()) n++; });
+    return n;
+  }
   /* how many foods in total (a food x2 counts as 2) - decides the delivery fee */
   function foodTotal() {
     let n = 0;
@@ -554,18 +594,32 @@
   }
   Object.keys(LISTS).forEach((kind) => {
     const cfg = LISTS[kind];
-    $(cfg.add).addEventListener('click', () => { $(cfg.err).classList.remove('show'); addRow(kind, true); haptic(); updateFee(); });
+    $(cfg.add).addEventListener('click', () => { if (cfg.err) $(cfg.err).classList.remove('show'); addRow(kind, true); haptic(); updateFee(); });
     $(cfg.box).addEventListener('input', updateFee);
-    addRow(kind, false);
+    if (!cfg.optional) addRow(kind, false);
   });
 
-  function jarTotal() {
-    const count = parseInt($('jarCount').value, 10) || 0;
-    return count > 0 ? JAR_PRICE * count : 0;
+  function jarLines() {                       // only the sizes with at least 1 jar
+    return Object.keys(JARS).map((l) => ({
+      liters: parseInt(l, 10),
+      count: Math.max(0, parseInt($('jar' + l).value, 10) || 0),
+      price: JARS[l].price, fee: JARS[l].fee
+    })).filter((x) => x.count > 0);
   }
+  function jarSums() {
+    let jars = 0, del = 0;
+    jarLines().forEach((x) => { jars += x.count * x.price; del += x.count * x.fee; });
+    return { jars: jars, del: del, total: jars + del };
+  }
+  function jarTotal() { return jarSums().total; }
   function updateJarTotal() {
-    const t = jarTotal();
-    $('jarTotal').textContent = t ? t + ' ' + CURRENCY : '—';
+    const t = jarSums();
+    const has = t.total > 0;
+    $('jarSub').textContent = has ? t.jars + ' ' + CURRENCY : '—';
+    $('jarDel').textContent = has ? t.del + ' ' + CURRENCY : '—';
+    $('jarTotal').textContent = has ? t.total + ' ' + CURRENCY : '—';
+    Object.keys(JARS).forEach((l) => $('jc' + l).classList.toggle('on', (parseInt($('jar' + l).value, 10) || 0) > 0));
+    if (has) $('jarErr').classList.remove('show');
     updateMainButton();
   }
 
@@ -594,11 +648,11 @@
     const data = { category: category };
 
     if (isJar) {
-      const count = parseInt($('jarCount').value, 10);
-      bad = flag('jarCount', 'jarCountErr', !(count >= 1)) || bad;
-      if (count >= 1) {
-        data.jar = { liters: JAR_LITERS, price: JAR_PRICE, count: count, total: JAR_PRICE * count };
-      }
+      const lines = jarLines();
+      $('jarErr').classList.toggle('show', !lines.length);
+      bad = !lines.length || bad;
+      // the bot works out the prices itself
+      data.jar = { items: lines.map((x) => ({ liters: x.liters, count: x.count })) };
     } else {
       const pickup = radio('pickup');
       const pickupOther = $('pickupOther').value.trim();
@@ -636,6 +690,17 @@
         if (!items.length) { listRows('Food')[0].querySelector('.it-name').classList.add('invalid'); rowBad = true; }
         $('foodErr').classList.toggle('show', rowBad);
         if (rowBad) bad = true;
+        // optional soft drinks (they never add to the delivery fee)
+        const drinks = [];
+        listRows('Drink').forEach((r) => {
+          const n = r.querySelector('.it-name'), q = r.querySelector('.it-qty');
+          const nm = n.value.trim(), qty = parseInt(q.value, 10);
+          n.classList.remove('invalid'); q.classList.remove('invalid');
+          if (!nm) return;                       // blank rows are ignored
+          if (!(qty >= 1)) { q.classList.add('invalid'); bad = true; return; }
+          drinks.push({ name: nm, quantity: qty });
+        });
+        data.drinks = drinks;
         // all foods come from ONE place
         const place = $('place').value.trim();
         bad = flag('place', 'placeErr', !place) || bad;
