@@ -61,7 +61,7 @@ log = logging.getLogger("meleektegna")
 ORDER_BUTTON = "🛵 Order Now · ትዕዛዝ ይስጡ"
 MENU_BUTTON_TEXT = "Order Now"
 
-CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Other": "🛒"}
+CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Key": "🔑", "Other": "🛒"}
 
 # =============================================================================
 # PRICES (in Birr). The bot decides the prices; the form's numbers are ignored.
@@ -69,11 +69,16 @@ CATEGORY_ICON = {"Food": "🍽️", "Medicine": "💊", "Jar Water": "💧", "Ot
 # =============================================================================
 # Jar water: price of the jar + delivery fee, PER JAR.
 #   10 L = jar comes WITH its bottle          20 L = the empty bottle is REPLACED
+# Keys: price of each key + ONE delivery fee per order (no extra fee for more keys).
+KEY_OPTIONS = {"Milano": 450, "Cobra": 700, "Meto Aleka": 800}
+KEY_DELIVERY_FEE = 50
+
 JAR_OPTIONS = {
     10: {"price": 180, "fee": 50, "note": "with bottle"},
     20: {"price": 190, "fee": 75, "note": "bottle replaced"},
 }
-DELIVERY_FEES = {"bole": 50, "geda": 60}      # any other place -> you contact the student
+DELIVERY_FEES = {"bole": 50, "geda": 60, "stadium": 50}   # any other place -> you contact the student
+FOOD_ONLY_PLACES = {"stadium"}                # pickup places that are only valid for Food
 FEE_CATEGORIES = {"Food", "Medicine"}         # categories that get a delivery fee
 EXTRA_ITEM_FEE = 20                           # Food only: each additional food adds this
                                               # (3 foods from Geda = 60 + 20 + 20 = 100)
@@ -132,6 +137,25 @@ def parse_order(d: dict) -> dict:
             o["jars_total"] = sum(x["jars_cost"] for x in lines)
             o["fee_total"] = sum(x["fee_cost"] for x in lines)
             o["total"] = o["jars_total"] + o["fee_total"]
+        elif category == "Key":
+            lines, seen = [], set()
+            for it in d["key"]["items"]:
+                brand, count = str(it["brand"]), int(it["count"])
+                if brand not in KEY_OPTIONS or brand in seen:
+                    raise ValueError("bad key brand")
+                seen.add(brand)
+                if count == 0:
+                    continue
+                if not 1 <= count <= 99:
+                    raise ValueError("bad key count")
+                price = KEY_OPTIONS[brand]        # prices come from HERE, never from the form
+                lines.append({"brand": brand, "count": count, "price": price, "cost": count * price})
+            if not lines:
+                raise ValueError("no keys")
+            o["lines"] = lines
+            o["keys_total"] = sum(x["cost"] for x in lines)
+            o["fee_total"] = KEY_DELIVERY_FEE     # ONE delivery fee, however many keys
+            o["total"] = o["keys_total"] + o["fee_total"]
         else:
             pickup = str(d["pickup"]).strip()[:80]
             if not pickup:
@@ -142,6 +166,8 @@ def parse_order(d: dict) -> dict:
             choice = str(d.get("pickupChoice") or "").strip().lower()
             key = None if choice == "other" else pickup.lower()
             each = DELIVERY_FEES.get(key) if (key and category in FEE_CATEGORIES) else None
+            if key in FOOD_ONLY_PLACES and category != "Food":
+                each = None                       # e.g. Stadium is only a Food pickup place
 
             if category in ("Food", "Medicine"):
                 raw = d.get("items")
@@ -222,6 +248,23 @@ def render_order(o: dict, user_id: int, full_name: str, username: str | None):
         student_summary = (
             "\n".join(f"💧 {x['liters']} Liter × {x['count']} ({x['note']})" for x in o["lines"])
             + f"\n💰 Jars: {o['jars_total']} Birr"
+            + f"\n🚚 Delivery: {o['fee_total']} Birr"
+            + f"\n💵 Total: {o['total']} Birr"
+        )
+    elif category == "Key":
+        key_lines = "\n".join(
+            f"   🔑 {x['brand']} × {x['count']} = {x['cost']} Birr" for x in o["lines"]
+        )
+        details = (
+            f"{icon} <b>Type:</b> Key\n"
+            f"{key_lines}\n"
+            f"💰 <b>Keys:</b> {o['keys_total']} Birr\n"
+            f"🚚 <b>Delivery fee:</b> {o['fee_total']} Birr (one fee for all keys)\n"
+            f"💵 <b>Total to collect:</b> <b>{o['total']} Birr</b>"
+        )
+        student_summary = (
+            "\n".join(f"🔑 {x['brand']} × {x['count']}" for x in o["lines"])
+            + f"\n💰 Keys: {o['keys_total']} Birr"
             + f"\n🚚 Delivery: {o['fee_total']} Birr"
             + f"\n💵 Total: {o['total']} Birr"
         )
@@ -318,7 +361,7 @@ def order_keyboard() -> ReplyKeyboardMarkup:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 እንኳን ደህና መጡ! Welcome to <b>መልእክተኛው delivery</b> – ASTU Student Delivery Service.\n\n"
-        "Food 🍽️ · Medicine 💊 · Jar Water 💧 · Other essentials 🛒\n\n"
+        "Food 🍽️ · Medicine 💊 · Jar Water 💧 · Keys 🔑 · Other essentials 🛒\n\n"
         "Tap <b>Order Now</b> below 👇",
         parse_mode=ParseMode.HTML,
         reply_markup=order_keyboard(),

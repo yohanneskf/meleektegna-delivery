@@ -190,6 +190,32 @@
   }
   .jarcard .jstep { grid-column: 1 / -1; }
 
+  /* ---------- KEYS + extra tiles ---------- */
+  .keycard {
+    display: grid; grid-template-columns: 96px 1fr; gap: 10px 12px; padding: 10px; border-radius: 20px;
+    background: linear-gradient(160deg, #ffffff, #eef1f8);
+    border: 2px solid var(--line); margin-bottom: 10px;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .keycard.on {
+    border-color: var(--navy-700); background: linear-gradient(160deg, #ffffff, #dfe5f2);
+    box-shadow: 0 12px 22px -10px rgba(20,33,61,.45);
+  }
+  .keycard img { width: 96px; height: 96px; object-fit: contain; background: #fff; border-radius: 14px; }
+  .keycard .kn { font-size: 20px; font-weight: 800; line-height: 1.15; }
+  .keycard .kn small { display: block; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .keycard .pr { font-size: 18px; font-weight: 800; color: var(--navy-500); margin-top: 3px; }
+  .keycard .each { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .keycard .jstep { grid-column: 1 / -1; }
+  .keynote { margin: 10px 4px 0; text-align: center; font-size: 12px; color: var(--muted); }
+  .t-key > span { background: linear-gradient(145deg, #eef1f7, #c5cee0); }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile.wide > span { display: flex; align-items: center; gap: 12px; }
+  .tile.wide .pic { width: 44%; height: 78px; flex: none; }
+  .tile.wide b { padding: 0; }
+  .chips.four { grid-template-columns: repeat(4, 1fr); }
+  .chips.four .chip > span { padding: 8px 2px; font-size: 13px; }
+
   /* ---------- DELIVERY FEE ---------- */
   .fee { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 14px;
     background: var(--yellow-soft); font-weight: 600; font-size: 14px;
@@ -279,7 +305,8 @@
       <label class="tile t-food"><input type="radio" name="category" value="Food"><span><img class="pic" src="images/food.jpg" alt=""><b>Food<small>ምግብ</small></b></span></label>
       <label class="tile t-med"><input type="radio" name="category" value="Medicine"><span><img class="pic" src="images/medicine.jpg" alt=""><b>Medicine<small>መድኃኒት</small></b></span></label>
       <label class="tile t-jar"><input type="radio" name="category" value="Jar Water"><span><img class="pic" src="images/jar.jpg" alt=""><b>Jar Water<small>የጃር ውሃ</small></b></span></label>
-      <label class="tile t-other"><input type="radio" name="category" value="Other"><span><img class="pic" src="images/other.jpg" alt=""><b>Other<small>ሌላ</small></b></span></label>
+      <label class="tile t-key"><input type="radio" name="category" value="Key"><span><img class="pic" src="images/key_tile.jpg" alt=""><b>Key<small>ቁልፍ</small></b></span></label>
+      <label class="tile t-other wide"><input type="radio" name="category" value="Other"><span><img class="pic" src="images/other.jpg" alt=""><b>Other<small>ሌላ</small></b></span></label>
     </div>
     <div class="err" id="categoryErr">Please choose what you need.</div>
   </section>
@@ -290,9 +317,10 @@
 
     <div class="field">
       <label>Where should we bring it from? <small>(ከየት እንምጣ?)</small></label>
-      <div class="chips">
+      <div class="chips" id="pickupChips">
         <label class="chip"><input type="radio" name="pickup" value="Bole"><span>Bole</span></label>
         <label class="chip"><input type="radio" name="pickup" value="Geda"><span>Geda</span></label>
+        <label class="chip" id="chipStadium" hidden><input type="radio" name="pickup" value="Stadium"><span>Stadium</span></label>
         <label class="chip"><input type="radio" name="pickup" value="Other"><span>Other</span></label>
       </div>
       <div class="reveal" id="pickupOtherWrap">
@@ -360,6 +388,20 @@
     </div>
   </section>
 
+  <!-- STEP 2C: keys -->
+  <section class="card step" id="stepKey">
+    <h2><span class="num">2</span><div>Choose your key<small>ቁልፍ ይምረጡ · you can take more than one</small></div></h2>
+    <div id="keyCards"></div>
+    <div class="err" id="keyErr">Please choose at least one key.</div>
+
+    <div class="total jtotal">
+      <div class="jl"><span>Keys · <small>ቁልፎች</small></span><span id="keySub">—</span></div>
+      <div class="jl"><span>Delivery fee · <small>የማድረስ ክፍያ</small></span><span id="keyDel">—</span></div>
+      <div class="jl big"><span>Total · <small>ጠቅላላ</small></span><b id="keyTotal">—</b></div>
+    </div>
+    <p class="keynote">One delivery fee for all keys · ለሁሉም ቁልፎች አንድ የማድረስ ክፍያ</p>
+  </section>
+
   <!-- STEP 3: delivery -->
   <section class="card step" id="stepDeliver">
     <h2><span class="num">3</span><div>Delivery details<small>የሚደርስበት</small></div></h2>
@@ -414,10 +456,18 @@
     10: { price: 180, fee: 50, note: 'With bottle · ከጃሩ ጋር' },
     20: { price: 190, fee: 75, note: 'Bottle replaced · ባዶ ጃሩ ይቀየራል' }
   };
-  const DELIVERY_FEES = { 'Bole': 50, 'Geda': 60 };   // any other place: you contact the student
+  const DELIVERY_FEES = { 'Bole': 50, 'Geda': 60, 'Stadium': 50 };   // any other place: you contact the student
+  const FOOD_ONLY_PLACES = ['Stadium'];              // pickup places that are shown (and priced) for Food only
   const FEE_CATEGORIES = ['Food', 'Medicine'];       // categories that get a delivery fee
   const EXTRA_FOOD_FEE = 20;                         // Food only: each additional food adds this (3 foods from Geda = 60+20+20 = 100)
                                                      // Medicine = one fixed fee, however many
+  /* Keys: price of each key + ONE delivery fee per order (no extra fee for more keys) */
+  const KEYS = {
+    'Milano':     { price: 450, img: 'images/key_milano.jpg',    am: '' },
+    'Cobra':      { price: 700, img: 'images/key_cobra.jpg',     am: '' },
+    'Meto Aleka': { price: 800, img: 'images/key_metoaleka.jpg', am: 'መቶ አለቃ' }
+  };
+  const KEY_DELIVERY_FEE = 50;
   const CURRENCY = 'Birr';
 
   /* Your bot's server on Render + "/order" (used when the form is opened
@@ -467,12 +517,31 @@
     '</div>';
   }).join('');
 
+  /* ---------- key cards (drawn from the KEYS prices above) ---------- */
+  const keyNames = Object.keys(KEYS);
+  $('keyCards').innerHTML = keyNames.map((n, i) => {
+    const k = KEYS[n];
+    return '<div class="keycard" id="kc' + i + '">' +
+      '<img src="' + k.img + '" alt="">' +
+      '<div>' +
+        '<div class="kn">' + n + (k.am ? '<small>' + k.am + '</small>' : '') + '</div>' +
+        '<div class="pr">' + k.price + ' ' + CURRENCY + '</div>' +
+        '<div class="each">per key · ለአንድ ቁልፍ</div>' +
+      '</div>' +
+      '<div class="jstep stepper">' +
+        '<button type="button" data-step="-1" data-target="key' + i + '" aria-label="less">−</button>' +
+        '<input class="input" type="number" id="key' + i + '" value="0" min="0" max="99" inputmode="numeric" aria-label="' + n + ' keys">' +
+        '<button type="button" data-step="1" data-target="key' + i + '" aria-label="more">+</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
   /* ---------- delivery fee box ---------- */
   function updateFee() {
     const box = $('feeBox');
     const cat = radio('category');
     const pickup = radio('pickup');
-    if (!cat || cat === 'Jar Water' || !pickup) { box.className = 'fee'; return; }
+    if (!cat || cat === 'Jar Water' || cat === 'Key' || !pickup) { box.className = 'fee'; return; }
     const each = FEE_CATEGORIES.indexOf(cat) >= 0 ? DELIVERY_FEES[pickup] : undefined;
     if (each) {
       const foods = cat === 'Food' ? foodTotal() : 1;
@@ -494,15 +563,21 @@
   function show(id, on) { $(id).classList.toggle('show', on); }
 
   function applyCategory(cat) {
-    const jar = cat === 'Jar Water';
-    show('stepGeneral', !jar);
+    const jar = cat === 'Jar Water', key = cat === 'Key';
+    show('stepGeneral', !jar && !key);
     show('stepJar', jar);
+    show('stepKey', key);
     show('stepDeliver', true);
     $('categoryErr').classList.remove('show');
 
     /* Food and Medicine: a list you can add to. Other: one item + place + quantity */
     const food = cat === 'Food', med = cat === 'Medicine';
     const classic = !food && !med;
+    /* Stadium is a pickup place for Food only */
+    $('chipStadium').hidden = !food;
+    $('pickupChips').classList.toggle('four', food);
+    const stadium = form.querySelector('input[name="pickup"][value="Stadium"]');
+    if (!food && stadium.checked) stadium.checked = false;
     $('foodField').hidden = !food;
     $('drinkField').hidden = !food;             // soft drinks: only with food
     $('medField').hidden = !med;
@@ -516,12 +591,12 @@
       'Medicine': ['Name of the medicine <small>(የመድኃኒቱ ስም)</small>', 'e.g. Paracetamol 500mg'],
       'Other':    ['Name of the material <small>(የዕቃው ስም)</small>', 'e.g. Notebook, pen, soap']
     };
-    if (!jar) {
+    if (!jar && !key) {
       $('itemLabel').innerHTML = labels[cat][0];
       $('item').placeholder = labels[cat][1];
     }
     updateFee();
-    if (jar) updateJarTotal(); else updateMainButton();
+    if (jar) updateJarTotal(); else if (key) updateKeyTotal(); else updateMainButton();
   }
 
   form.addEventListener('change', (e) => {
@@ -543,11 +618,13 @@
       const hi = t.max === '' ? 999 : parseInt(t.max, 10);
       t.value = Math.min(hi, Math.max(lo, (parseInt(t.value, 10) || lo) + parseInt(b.dataset.step, 10)));
       if (b.dataset.target.indexOf('jar') === 0) updateJarTotal();
+      if (b.dataset.target.indexOf('key') === 0) updateKeyTotal();
       if (b.dataset.target === 'quantity') updateFee();
       haptic();
     });
   });
   $('jarCards').addEventListener('input', updateJarTotal);
+  $('keyCards').addEventListener('input', updateKeyTotal);
   $('quantity').addEventListener('input', updateFee);
 
   /* ---------- item lists: Food and Medicine (add as many as you like) ---------- */
@@ -623,6 +700,33 @@
     updateMainButton();
   }
 
+  /* ---------- keys: price of each key + ONE delivery fee, however many keys ---------- */
+  function keyLines() {                       // only the brands with at least 1 key
+    return keyNames.map((n, i) => ({
+      brand: n,
+      count: Math.max(0, parseInt($('key' + i).value, 10) || 0),
+      price: KEYS[n].price
+    })).filter((x) => x.count > 0);
+  }
+  function keySums() {
+    const lines = keyLines();
+    let keys = 0;
+    lines.forEach((x) => { keys += x.count * x.price; });
+    const del = lines.length ? KEY_DELIVERY_FEE : 0;
+    return { keys: keys, del: del, total: keys + del };
+  }
+  function keyTotal() { return keySums().total; }
+  function updateKeyTotal() {
+    const t = keySums();
+    const has = t.total > 0;
+    $('keySub').textContent = has ? t.keys + ' ' + CURRENCY : '—';
+    $('keyDel').textContent = has ? t.del + ' ' + CURRENCY : '—';
+    $('keyTotal').textContent = has ? t.total + ' ' + CURRENCY : '—';
+    keyNames.forEach((n, i) => $('kc' + i).classList.toggle('on', (parseInt($('key' + i).value, 10) || 0) > 0));
+    if (has) $('keyErr').classList.remove('show');
+    updateMainButton();
+  }
+
   /* ---------- helpers ---------- */
   function normalizePhone(raw) {
     let p = raw.replace(/[\s\-()]/g, '');
@@ -647,7 +751,13 @@
     const isJar = category === 'Jar Water';
     const data = { category: category };
 
-    if (isJar) {
+    if (category === 'Key') {
+      const lines = keyLines();
+      $('keyErr').classList.toggle('show', !lines.length);
+      bad = !lines.length || bad;
+      // the bot works out the prices itself
+      data.key = { items: lines.map((x) => ({ brand: x.brand, count: x.count })) };
+    } else if (isJar) {
       const lines = jarLines();
       $('jarErr').classList.toggle('show', !lines.length);
       bad = !lines.length || bad;
@@ -790,7 +900,7 @@
     if (!insideTelegram) return;
     const cat = radio('category');
     if (!cat) { tg.MainButton.hide(); return; }
-    const t = cat === 'Jar Water' ? jarTotal() : 0;
+    const t = cat === 'Jar Water' ? jarTotal() : (cat === 'Key' ? keyTotal() : 0);
     tg.MainButton.setParams({
       text: t ? 'SEND ORDER · ' + t + ' ' + CURRENCY : 'SEND ORDER · ትዕዛዝ ላክ',
       color: '#14213d',
